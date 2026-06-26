@@ -454,7 +454,27 @@ $script:Calm  = [bool]$Calm
 $script:Live  = $false
 $script:Force = $false
 $script:Dread = [Math]::Min(1.0, [Math]::Max(0.0, $StartDread))
-$Viewer = if ($env:USERNAME) { ($env:USERNAME -replace '[^A-Za-z0-9]','').ToUpper() } else { 'VIEWER' }
+# THE BROADCAST WILL NOT BE FOBBED OFF WITH A LOGIN NAME.  It reaches into the
+# machine and digs up the realest name it can find -- your actual, human name,
+# the one on the account -- and that is the name it says, deadpan, into the lens.
+function Format-ViewerName { param([string]$raw)
+    if (-not $raw) { return '' }
+    $n = ($raw -split '[\\/@]')[-1]                 # drop DOMAIN\ and @realm cruft
+    $n = ($n -replace '[^A-Za-z0-9 ]',' ' -replace '\s+',' ').Trim()
+    if ($n) { $n.ToUpper() } else { '' } }
+function Find-Viewer {
+    # 1. your friendly display name ("James Morse"), if the OS will give it up
+    try {
+        Add-Type -AssemblyName System.DirectoryServices.AccountManagement -ErrorAction Stop
+        $dn = Format-ViewerName ([System.DirectoryServices.AccountManagement.UserPrincipal]::Current.DisplayName)
+        if ($dn) { return $dn }
+    } catch {}
+    # 2. the Windows identity behind the session (DOMAIN\you)
+    try { $n = Format-ViewerName ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name); if ($n) { return $n } } catch {}
+    # 3. the .NET account name
+    try { $n = Format-ViewerName ([Environment]::UserName); if ($n) { return $n } } catch {}
+    'VIEWER' }
+$Viewer = Find-Viewer
 if (-not $Viewer) { $Viewer = 'VIEWER' }
 $GlitchGlyph = '#%&@*+=:<>/\|~^".'.ToCharArray()
 $Whispers = @{   # what the broadcast says, by how aware it has become (tier <- dread)
