@@ -5,7 +5,8 @@
     delivers an overwrought soliloquy (with REAL animated tears), drops a
     scandalous CONFESSION on a flash of lightning + screen-shake + a musical
     sting, SWOONS onto the fainting couch... and is rewarded with a
-    rose-throwing standing ovation and a tearful curtain-call bow.
+    rose-throwing standing ovation -- THE POND IS ON ITS FEET -- and a
+    tearful curtain-call bow.
 
 .DESCRIPTION
     Each "act" is directed as a tiny tragedy:
@@ -15,6 +16,11 @@
       DUUUN")  ->  THE SWOON (collapse onto the chaise)  ->  STANDING OVATION
       (BRAVO!, falling roses, thunderous applause)  ->  CURTAIN CALL bow  ->
       curtain falls  ->  next show.
+
+    THE POND IS THE HOUSE.  A live audience of waterfowl sits below the stage
+    with a POND-O-METER that ripples in real time: it murmurs and quacks through
+    the soliloquy, hushes to still water in the breath before the confession,
+    and at the ovation the whole pond rises, as one, to its feet.
 
     Live mode redraws the whole stage in place with sound + motion (needs a
     real console). -Storyboard prints a representative montage to stdout
@@ -260,14 +266,69 @@ function Build-Stage { param($cells)
     Row ("'"+('='*($w-2))+"'") 'DarkRed'
     Row (Center '. : * . : * . : * . : * . : * . : *' $w) 'Yellow'
     Row (Center '\____________ STAGE ____________/' $w) 'DarkGray'
+    foreach ($pr in (Get-PondRows)) { $out.Add($pr) }   # the live pond, seated below the stage
     ,$out
 }
 
 function Show-Live  { param($cells,[int]$indent=4)
+    if ($script:FeetFrames -gt 0) { $script:FeetFrames--; $script:Pond = 1.0 }   # held on its feet
+    else { $script:Pond = [Math]::Max(0.0, $script:Pond*0.90 - 0.012) }           # the pond settles
     $st = Build-Stage $cells
     Clear-Host; Write-Host ''
     foreach ($l in $st) { Write-Host ((' '*$indent)+$l.Text) -ForegroundColor $l.Color } }
 function Show-Plain { param($cells) (Build-Stage $cells) | ForEach-Object { $_.Text } }
+
+# ============================ The pond (live audience) =======================
+# The pond is not just scenery -- it is the house. $Pond (0..1) is the energy
+# in the water: bumped by each beat via React, decaying every frame so it
+# SWINGS -- murmuring through the soliloquy, hushing to still water before the
+# confession, and at the ovation the whole pond stands ($FeetFrames holds it
+# up). Rendered as four rows below the stage by Build-Stage.
+$PondN = 8
+$script:Pond       = 0.0
+$script:FeetFrames = 0
+$script:Live       = $false
+function React { param([double]$to,[string]$sting='')          # stir the pond
+    if ($to -gt $script:Pond) { $script:Pond = [Math]::Min(1.0,$to) }
+    if ($sting -and $script:Live) { Sting $sting } }
+function Get-PondMood {
+    if ($script:FeetFrames -gt 0) { return 'feet' }
+    $r=$script:Pond
+    if ($r -ge 0.80) { 'applause' } elseif ($r -ge 0.58) { 'quack' }
+    elseif ($r -ge 0.36) { 'murmur' } elseif ($r -ge 0.15) { 'ripple' } else { 'still' } }
+function Get-PondRows {
+    $w = $SW + 6
+    $mood = Get-PondMood
+    $base = @{ still='<o)'; ripple='<o)'; murmur='<O)'; quack='<Q)'; applause='\o/'; feet='\O/' }[$mood]
+    $seats=@()
+    for ($i=0; $i -lt $PondN; $i++) {
+        $s=$base
+        switch ($mood) {
+            'ripple'   { if ($rng.Next(100) -lt 30) { $s='<O)' } }
+            'murmur'   { if ($rng.Next(100) -lt 30) { $s=Pick @('<o)','<O)') } }
+            'quack'    { if ($rng.Next(100) -lt 45) { $s=Pick @('<O)','<o)','<Q)') } }
+            'applause' { if ($rng.Next(100) -lt 45) { $s=Pick @('\o/','\O/','/o\') } }
+            'feet'     { if ($rng.Next(100) -lt 50) { $s=Pick @('\O/','\o/','\Q/') } }
+        }
+        $seats += $s }
+    $col = @{ still='DarkCyan'; ripple='DarkCyan'; murmur='Cyan'; quack='White'; applause='Yellow'; feet='Magenta' }[$mood]
+    # the water they sit on -- a flat surface that churns up as the pond rises
+    $wet = ('~'*$w).ToCharArray()
+    $splash = [int]($script:Pond * $w * 0.5)
+    for ($k=0; $k -lt $splash; $k++) { $wet[$rng.Next($w)] = (Pick @('^','^','v',':','.'))[0] }
+    # the POND-O-METER  (kept inside the pond's 52-col width so it never clips)
+    $bw=10; $fill=[int][Math]::Round($script:Pond*$bw)
+    $bar='['+('|'*$fill)+(' '*($bw-$fill))+']'
+    $desc=@{ still='still water'; ripple='a ripple of polite quacks'; murmur='the pond MURMURS';
+             quack='the pond is QUACKING'; applause='the pond APPLAUDS'; feet='THE POND IS ON ITS FEET!' }[$mood]
+    $mcol = if ($mood -eq 'feet') { 'Magenta' } elseif ($script:Pond -ge 0.58) { 'Yellow' }
+            elseif ($script:Pond -ge 0.15) { 'White' } else { 'DarkCyan' }
+    @(
+      (Cell (Center 'o  o  o   T H E   P O N D   o  o  o' $w) 'DarkCyan'),
+      (Cell (Center (($seats -join '  ')) $w) $col),
+      (Cell (-join $wet) 'DarkBlue'),
+      (Cell (Center ("POND-O-METER $bar $desc") $w) $mcol)
+    ) }
 
 # ============================ Sound ==========================================
 function Beep  { param([int]$f,[int]$ms) if (-not $script:Silent) { try { [Console]::Beep($f,$ms) } catch {} } }
@@ -278,7 +339,9 @@ function Sting { param([string]$n) switch ($n) {
     'confess'  { Beep 466 150; Beep 466 150; Beep 392 600 }                   # dun dun DUUUN
     'thud'     { Beep 110 220; Beep 90 260 }                                   # the swoon
     'applause' { 1..14 | ForEach-Object { Beep (RNext 200 700) 22 } }
-    'bow'      { Beep 523 130; Beep 659 130; Beep 784 360 } } }
+    'bow'      { Beep 523 130; Beep 659 130; Beep 784 360 }
+    'quack'    { 1..3 | ForEach-Object { Beep (RNext 280 360) 90; Beep (RNext 150 210) 70 } }   # the pond gasps
+    'ovation'  { 1..20 | ForEach-Object { Beep (RNext 220 900) 16 }; Beep 740 240 } } }          # the house erupts
 
 # ============================ Live motion helpers ============================
 function Invoke-Flash { 1..2 | ForEach-Object { Show-Live (Get-FlashShot); Beep (RNext 60 90) 70; Start-Sleep -Milliseconds 55 } }
@@ -289,8 +352,9 @@ function Invoke-Act { param($act)
     # 1. The curtain rises
     foreach ($p in 0.0,0.18,0.38,0.6,0.82,1.0) {
         Show-Live (Get-CurtainShot $p); Start-Sleep -Milliseconds 140; if (Test-Quit) { throw 'quit' } }
-    Sting curtain; Start-Sleep -Milliseconds 250
+    Sting curtain; React 0.22; Start-Sleep -Milliseconds 250
     # 2. Tonight's tragedy (title card)
+    React 0.15
     Show-Live (Get-CardShot "TONIGHT'S TRAGEDY" $act.Title 'White'); Start-Sleep -Milliseconds 1200; if (Test-Quit) { throw 'quit' }
     # 3. The opening line + the weeping soliloquy
     $marq = 0
@@ -301,21 +365,30 @@ function Invoke-Act { param($act)
             $tr = if ($beat.Emo -eq 'weep') { ($tear % 3) } else { -1 }
             Show-Live (Get-StageShot $act $beat.Emo $beat.Text $beat.Kind $marq $tr)
             $marq += 2; $tear++
-            if ($f -eq 1 -and $beat.Emo -eq 'weep') { Sting sob }
-            if ($f -eq 1 -and $beat.Emo -eq 'gasp') { Sting gasp }
+            if ($f -eq 1) {                                    # the pond reacts to each beat
+                switch ($beat.Emo) {
+                    'weep'    { Sting sob;  React 0.42 }
+                    'gasp'    { Sting gasp; React 0.62 quack }
+                    'defiant' { React 0.52 }
+                    default   { React 0.40 }
+                } }
             Start-Sleep -Milliseconds 150; if (Test-Quit) { throw 'quit' }
         }
     }
-    # 4. THE CONFESSION -- build, flash, sting, shake
+    # 4. THE CONFESSION -- the pond hushes to still water, then GASPS
     foreach ($h in 1..3) { Beep 70 90; Start-Sleep -Milliseconds 240 }
+    $script:Pond = 0.05                                       # you could hear a lily pad drop
     Show-Live (Get-StageShot $act 'gasp' 'and now... the truth.' 'dir' $marq); Start-Sleep -Milliseconds 500
     $confShot = Get-StageShot $act 'gasp' $act.Confession 'line' $marq
-    Show-Live $confShot; Invoke-Flash; Sting confess; Invoke-Shake $confShot
+    Show-Live $confShot; Invoke-Flash; Sting confess; React 0.78; Invoke-Shake $confShot
     Show-Live $confShot; Start-Sleep -Milliseconds 900; if (Test-Quit) { throw 'quit' }
     # 5. THE SWOON
+    React 0.5
     Show-Live (Get-FaintShot $act $marq); Sting thud; Start-Sleep -Milliseconds 1100; if (Test-Quit) { throw 'quit' }
-    # 6. STANDING OVATION -- roses + thunderous applause
-    foreach ($o in 1..6) { Show-Live (Get-OvationShot); Sting applause; Start-Sleep -Milliseconds 200; if (Test-Quit) { throw 'quit' } }
+    # 6. STANDING OVATION -- the whole pond rises: THE POND IS ON ITS FEET
+    $script:Pond = 1.0; $script:FeetFrames = 60; Sting ovation
+    foreach ($o in 1..6) { Show-Live (Get-OvationShot); if ($o -eq 1 -or $o -eq 4) { Sting applause }; Start-Sleep -Milliseconds 200; if (Test-Quit) { throw 'quit' } }
+    Show-Live (Get-CardShot 'THE POND' 'IS ON ITS FEET' 'Magenta'); Sting ovation; Start-Sleep -Milliseconds 1000; if (Test-Quit) { throw 'quit' }
     # 7. The curtain call -- a tearful bow
     Show-Live (Get-StageShot $act 'love' '* takes a deep, tearful bow *' 'dir' $marq); Sting bow; Start-Sleep -Milliseconds 900
     Show-Live (Get-StageShot $act 'triumph' 'thank you... THANK you, you are too kind.' 'line' $marq); Start-Sleep -Milliseconds 900
@@ -335,14 +408,19 @@ if ($Storyboard) {
         Show-Plain (Get-CurtainShot 0.45); ''
         "  [ TONIGHT'S TRAGEDY -- title card ]"
         Show-Plain (Get-CardShot "TONIGHT'S TRAGEDY" $act.Title 'White'); ''
-        '  [ THE SOLILOQUY -- the duck weeps; tears trickle down the bill; PLAYBILL marquee scrolls ]'
+        '  [ THE SOLILOQUY -- the pond MURMURS; tears trickle down the bill; PLAYBILL marquee scrolls ]'
+        $script:Pond = 0.42; $script:FeetFrames = 0
         Show-Plain (Get-StageShot $act 'weep' $act.Opener 'line' 0 1); ''
-        '  [ *** THE CONFESSION -- lightning, screen-shake, "dun dun DUUUN" *** ]'
+        '  [ *** THE CONFESSION -- the pond hushes to still water, then GASPS *** ]'
+        $script:Pond = 0.06
         Show-Plain (Get-StageShot $act 'gasp' $act.Confession 'line' 0); ''
         '  [ THE SWOON -- onto the fainting couch ]'
         Show-Plain (Get-FaintShot $act 0); ''
-        '  [ STANDING OVATION -- BRAVO!, falling roses, thunderous applause ]'
-        Show-Plain (Get-OvationShot); ''
+        '  [ STANDING OVATION -- BRAVO!, falling roses, THE POND IS ON ITS FEET ]'
+        $script:Pond = 1.0; $script:FeetFrames = 5
+        Show-Plain (Get-OvationShot)
+        Show-Plain (Get-CardShot 'THE POND' 'IS ON ITS FEET' 'Magenta'); ''
+        $script:Pond = 0.0; $script:FeetFrames = 0
         '  [ THE CURTAIN CALL -- a tearful bow ]'
         Show-Plain (Get-StageShot $act 'love' '* takes a deep, tearful bow *' 'dir' 0); ''
         if ($e -lt $Scenes) { '  . : .  *the curtain falls*  . : .'; Show-Plain (Get-CurtainShot 0.0); '' }
@@ -357,7 +435,7 @@ $prevCursor = [Console]::CursorVisible
 try { [Console]::CursorVisible=$false } catch {}
 function Test-Quit { try { if ([Console]::KeyAvailable){[void][Console]::ReadKey($true);return $true} } catch {}; return $false }
 
-$staged = 0
+$staged = 0; $script:Live = $true
 try {
     while ($true) {
         Invoke-Act (New-Act)
