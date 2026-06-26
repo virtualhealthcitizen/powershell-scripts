@@ -17,6 +17,12 @@
     The harder the burn, the harder the room goes: a chuckle, then FLOORED,
     then the room is simply destroyed and a chair gets thrown.
 
+    ...EXCEPT WHEN IT DOESN'T.  Now and then -- regardless of how good the line
+    was -- the joke just BOMBS.  Total silence.  A lone cricket.  A tumbleweed
+    rolls clean across the broadcast.  One person coughs.  And the guy?  He does
+    not care.  At all.  REC keeps rolling, the stare never breaks, and he moves
+    on to the next one.  The not-caring is the whole bit.
+
     Live mode redraws in place with sound + motion (needs a real console).
     -Storyboard prints a representative montage of frames to stdout instead.
 
@@ -26,6 +32,7 @@
 .PARAMETER Scenes      Storyboard: how many bits to lay out. Default 1.
 .PARAMETER Seed        Fix the RNG for reproducible output. 0 = random.
 .PARAMETER Fast        Type faster and shorten the dramatic holds. For the impatient.
+.PARAMETER Bomb        Every bit bombs. Crickets only. He still does not care.
 
 .EXAMPLE
     .\Floored.ps1
@@ -33,6 +40,8 @@
     .\Floored.ps1 -Bits 5
 .EXAMPLE
     .\Floored.ps1 -Storyboard -Scenes 2 -Seed 42
+.EXAMPLE
+    .\Floored.ps1 -Bomb                 # nothing but crickets, all night
 #>
 [CmdletBinding()]
 param(
@@ -41,7 +50,8 @@ param(
     [switch]$Storyboard,
     [int]$Scenes = 1,
     [int]$Seed   = 0,
-    [switch]$Fast
+    [switch]$Fast,
+    [switch]$Bomb
 )
 
 # ============================ RNG ============================================
@@ -56,6 +66,7 @@ $TypeMs = if ($Fast) { 9 }   else { 34 }    # ms per character of the punchline
 $Beat   = if ($Fast) { 320 } else { 850 }   # short pause
 $Hold   = if ($Fast) { 650 } else { 1500 }  # long deadpan hold
 $BW     = 56                                 # interior width of the broadcast
+$BombChance = 0.16                           # odds any given bit just... bombs
 
 # ============================ Helpers ========================================
 function Center { param([string]$s,[int]$w)
@@ -75,7 +86,9 @@ function Sting { param([string]$n) switch ($n) {
     'laugh'    { 1..6 | ForEach-Object { Beep (RNext 300 520) 50 } }            # the room cracks
     'applause' { 1..14 | ForEach-Object { Beep (RNext 900 2400) 18 } }          # the wave hits
     'floored'  { Beep 523 120; Beep 659 120; Beep 784 360 }                     # the payoff fanfare
-    'chair'    { Beep 90 200; Beep 70 320 } } }                                 # a chair gets thrown
+    'chair'    { Beep 90 200; Beep 70 320 }                                     # a chair gets thrown
+    'cricket'  { 1..2 | ForEach-Object { Beep 2600 30; Beep 2300 30 } }         # ...nothing
+    'cough'    { Beep 140 110 } } }                                             # one lone cough
 
 # ============================ Word banks =====================================
 # Curated deadpan bits -- a setup line and a punch, each tagged with a burn
@@ -120,7 +133,35 @@ $BitPool = @(
   @{ Setup='I keep a gratitude list.';
      Punch='It is just the WiFi password and one good nap.'; Burn=2 },
   @{ Setup='They told me to bring my whole self to work.';
-     Punch='HR has since revised that policy.'; Burn=3 }
+     Punch='HR has since revised that policy.'; Burn=3 },
+  @{ Setup='I tried to find myself.';
+     Punch='I was not there either.'; Burn=3 },
+  @{ Setup='My smartwatch told me to stand.';
+     Punch='So I stood. It has not had another idea since.'; Burn=2 },
+  @{ Setup='I went back to school.';
+     Punch='To get a jacket. I left it there in 2009.'; Burn=2 },
+  @{ Setup='They say dress for the job you want.';
+     Punch='Security keeps escorting me out of the cockpit.'; Burn=3 },
+  @{ Setup='My credit score went up.';
+     Punch='My standards came down to meet it.'; Burn=2 },
+  @{ Setup='I started saying no to things.';
+     Punch='Mostly alarms. Mostly mornings.'; Burn=1 },
+  @{ Setup='I told them I am a people person.';
+     Punch='The people have not corroborated this.'; Burn=3 },
+  @{ Setup='I joined a gym in January.';
+     Punch='They send a card every year. They miss me. I do not miss back.'; Burn=2 },
+  @{ Setup='I have a morning routine now.';
+     Punch='Step one is being shocked it is morning.'; Burn=2 },
+  @{ Setup='I cleaned out my inbox.';
+     Punch='Declared email bankruptcy. The creditors were all me.'; Burn=2 },
+  @{ Setup='My doctor said I should reduce stress.';
+     Punch='So I stopped opening the mail. Bold new chapter.'; Burn=2 },
+  @{ Setup='I am big on self-care now.';
+     Punch='I let every call go to voicemail. All of them. Forever.'; Burn=2 },
+  @{ Setup='I asked for a raise.';
+     Punch='They raised the bar instead. I cannot reach it.'; Burn=3 },
+  @{ Setup='People say I light up a room.';
+     Punch='I leave. The flicking is the light switch.'; Burn=1 }
 )
 function New-Bit { Pick $BitPool }
 
@@ -172,6 +213,15 @@ $FlooredBanner = @(
   '| |_  | | | | | | | | | |_) |  _| | | | |',
   '|  _| | |_| |_| | |_| |  _ <| |___| |_| |',
   '|_|   |_____\___/ \___/|_| \_\_____|____/' )
+
+# The anti-payoff: the silence that arrives when the joke does not land.
+$NothingBanner = @(
+  ' _  _  ___ _____ _  _ ___ _  _  ___ ',
+  '| \| |/ _ \_   _| || |_ _| \| |/ __|',
+  '| .` | (_) | | | | __ || || .` | (_ |',
+  '|_|\_|\___/  |_| |_||_|___|_|\_|\___|' )
+# A tumbleweed, mid-tumble. Alternating frames so it looks like it is rolling.
+$Weed = @('(@)','<@>','{@}','<@>')
 
 # ============================ Crowd ==========================================
 # A procedurally-thrown crowd: more arms up + more dropped jaws the higher
@@ -256,6 +306,12 @@ function Blink-Rec { param([string[]]$Pic,[string]$Tag,[System.Diagnostics.Stopw
 
 # The room going up: applause meter fills, crowd thrown, banner, screen-shake.
 function Invoke-Floored { param([int]$burn,[System.Diagnostics.Stopwatch]$Sw)
+    # on the killer lines, let it hang a half-second longer -- then it erupts
+    if ($burn -ge 3 -and $rng.NextDouble() -lt 0.5) {
+        Draw -Picture $Lens -Tag 'B-ROLL' -RecOn $true -Time (Tc $Sw)
+        Write-Host ''; Write-Host '  >> ' -NoNewline -ForegroundColor DarkCyan
+        Write-Host '[ . . . wait for it . . . ]' -ForegroundColor DarkGray
+        Pause ([int]($Hold*0.7)) }
     # the wave of sound
     Sting laugh; Pause 120
     if ($burn -ge 2) { Sting applause }
@@ -280,6 +336,32 @@ function Invoke-Floored { param([int]$burn,[System.Diagnostics.Stopwatch]$Sw)
     if ($burn -ge 3) { Sting chair }
     Pause $Hold }
 
+# The other outcome: it bombs. A cricket, a tumbleweed, one cough, and a guy
+# who could not possibly care less. REC never stops rolling.
+function Invoke-Bombed { param([System.Diagnostics.Stopwatch]$Sw)
+    $captions = @('[ . . . ]','somewhere, a single cricket','one person coughs, immediately regrets it',
+                  'a chair creaks, apologetically','[ nothing. nothing at all. ]')
+    Sting cricket; Pause 250
+    # the tumbleweed rolls clean across the empty room
+    for ($x=0; $x -le ($BW-3); $x += 5) {
+        $weedLine = (' '*$x) + (Pick $Weed)
+        $pic = @('','','',$weedLine,'','   '+(Pick $captions))
+        Draw -Picture $pic -Tag 'AUDIENCE REACTION' -RecOn $true -Time (Tc $Sw) -Color DarkGray
+        if ($x % 10 -eq 0) { Sting cricket } else { Sting cough }
+        Pause 120 }
+    Pause 250
+    # cut back to the guy. unchanged. unbothered. still recording.
+    Draw -Picture $Lens -Tag 'B-ROLL' -RecOn $true -Time (Tc $Sw) -Color Yellow
+    Write-Host ''; Write-Host '  >> ' -NoNewline -ForegroundColor DarkCyan
+    Write-Host '[ he does not care. at all. ]' -ForegroundColor DarkGray
+    Pause $Hold
+    # the anti-card: NOTHING, in funereal grey. no fanfare. that is the joke.
+    foreach ($k in 1..2) {
+        Draw -Picture (@('') + $NothingBanner + @('','      * crickets. respectfully. *')) `
+             -Tag 'AUDIENCE: ...' -RecOn $true -Time (Tc $Sw) -Color DarkGray
+        Pause 110 }
+    Pause $Hold }
+
 # One full bit, start to finish.
 function Invoke-Bit { param($bit,[System.Diagnostics.Stopwatch]$Sw)
     # 1. OPEN ON THE GUY
@@ -298,8 +380,9 @@ function Invoke-Bit { param($bit,[System.Diagnostics.Stopwatch]$Sw)
         Write-Host '  >> ' -NoNewline -ForegroundColor DarkCyan
         Write-Host ('[ '+('.'*$s)+' dead silence '+('.'*$s)+' ]') -ForegroundColor DarkGray
         Pause ([int]($Hold*0.55)) }
-    # 5. FLOORED
-    Invoke-Floored -burn $bit.Burn -Sw $Sw }
+    # 5. THE OUTCOME -- floored, or (now and then) crickets. He won't flinch either way.
+    if ($Bomb -or ($rng.NextDouble() -lt $BombChance)) { Invoke-Bombed -Sw $Sw }
+    else { Invoke-Floored -burn $bit.Burn -Sw $Sw } }
 
 function Show-SignOff { param([System.Diagnostics.Stopwatch]$Sw)
     Draw -Picture @(
@@ -334,6 +417,11 @@ if ($Storyboard) {
         (New-Crowd $bit.Burn | ForEach-Object { '   |'+(Center $_ $BW)+'|' }) -join "`n"
         ($FlooredBanner | ForEach-Object { '   '+$_ }) -join "`n"
         '        '+(Pick $Reactions[$bit.Burn]); ''
+        '  [ ALTERNATE ENDING -- now and then, it just BOMBS ]'
+        ('   |'+(Center ((' '*((RNext 0 ($BW-3))))+(Pick $Weed)) $BW)+'|')
+        ($NothingBanner | ForEach-Object { '   '+$_ }) -join "`n"
+        '        * crickets. respectfully. *'
+        '        [ he does not care. at all. ]'; ''
         if ($e -lt $Scenes) { '  . : .  *click* next bit  . : .'; '' }
     }
     return
