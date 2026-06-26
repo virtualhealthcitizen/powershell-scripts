@@ -14,11 +14,20 @@
     Live mode redraws in place with sound + motion (needs a real console).
     -Storyboard prints a representative montage of frames to stdout instead.
 
+    THE LEVEL IS AWARE OF YOU.  A hidden "dread" meter climbs the longer you
+    watch.  As it rises the broadcast decays: bit-rot creeps into the picture,
+    tiered messages bleed through (escalating from "THE LEVEL IS IGNORING YOU"
+    to direct, named threats), and the set's own chrome -- brand, channel,
+    indicator lamps -- starts to glitch.  Past a threshold THE LEVEL looks
+    directly at you by name... then blinks, looks away, and the dread subsides.
+
 .PARAMETER Channels   How many episodes before exiting. 0 (default) = forever.
 .PARAMETER Silent     Disable the [Console]::Beep sound cues.
 .PARAMETER Storyboard Print a static montage to stdout (no animation / sound).
 .PARAMETER Scenes     Storyboard: how many episodes to lay out. Default 1.
 .PARAMETER Seed       Fix the RNG for reproducible output. 0 = random.
+.PARAMETER Calm       The broadcast behaves: no dread, decay, glitches or haunt.
+.PARAMETER StartDread Begin already unsettled. 0.0 (default) .. 1.0 (possessed).
 
 .EXAMPLE
     .\Drama-TV.ps1
@@ -26,6 +35,8 @@
     .\Drama-TV.ps1 -Channels 4
 .EXAMPLE
     .\Drama-TV.ps1 -Storyboard -Scenes 1 -Seed 42
+.EXAMPLE
+    .\Drama-TV.ps1 -StartDread 0.9          # straight to the haunting
 #>
 [CmdletBinding()]
 param(
@@ -33,7 +44,9 @@ param(
     [switch]$Silent,
     [switch]$Storyboard,
     [int]$Scenes   = 1,
-    [int]$Seed     = 0
+    [int]$Seed     = 0,
+    [switch]$Calm,
+    [double]$StartDread = 0
 )
 
 # ============================ RNG ============================================
@@ -59,6 +72,10 @@ $Names = @('Brad','Vanessa','Dimitri','Esmeralda','Chad','Bianca','Rex','Cordeli
 $Adjs  = @('Bold','Restless','Damned','Reckless','Forsaken','Tempestuous','Scandalous','Doomed','Untamed','Eternal')
 $Places= @('Ravenshollow','Maplewood','Sunset Bay','Port Charlatan','Crestfall','Bel-Aire','Thornwood','Ashbury')
 $Rels  = @('father','mother','sister','brother','long-lost twin','secret heir','fiance')
+# Cosmic-horror locales + things that should not be named (for the 'cosmic' genre).
+$Cosmos  = @('R''lyeh','Carcosa','the Dreamlands','Innsmouth','Arkham','Yuggoth','the Plateau of Leng','Dunwich')
+$Eldritch= @('Cthulhu','Yog-Sothoth','Nyarlathotep','Azathoth','the Faceless Swarm','That Which Waits',
+             'the Hung Moon','the Crawling Chaos','the Thing in the Walls','the Goat with a Thousand Young')
 $Faces = @{ shock='(O_O)'; cry='(T_T)'; angry='(>_<)'; smug='(-_~)'; love='(^3^)'
             happy='(^_^)'; faint='(x_x)'; scared='(o_O)'; sob='(;_;)' }
 $Emotions = @($Faces.Keys)
@@ -70,19 +87,51 @@ $Dialogue = @{
             'The child... it is yours, {O}!','I have been lying this entire time!',
             'You are not my real {REL}!','I will never forgive you, {O}!',
             'We were never truly in love!','It was you all along, {O}!','I faked the whole thing!')
-    soap=@('You kissed my {REL}?!','I am leaving you forever!','This wedding is OFF!')
+    soap=@('You kissed my {REL}?!','I am leaving you forever!','This wedding is OFF!',
+           'I am pregnant... with your {REL}''s child!','You promised me Paris, {O}!','I burned the prenup, {O}!',
+           'My evil twin did all of it!','I am keeping the beach house!')
     hospital=@('Stat! We are losing {O}!','The charts were switched!','The transplant was sabotaged!')
     court=@('Objection, Your Honor!','The real culprit is {O}!','I confess... it was me!')
-    crime=@('Freeze! It is over, {O}!','The killer left one last clue...','You have the wrong suspect!') }
+    crime=@('Freeze! It is over, {O}!','The killer left one last clue...','You have the wrong suspect!')
+    cosmic=@('It speaks through me now, {O}!','The stars are RIGHT at last, {O}!','You were never human, were you, {O}?',
+             'The angles in this room are ALL wrong!','{ENTITY} showed me the truth, {O}!','My skin no longer FITS!',
+             'I cannot unsee what sleeps beneath {PLACE}!','We are but a dream {ENTITY} is having!') }
 $Actions = @{
     any=@('* thunder crashes outside *','* {W} faints onto the floor *','* a single dramatic tear falls *',
           '* {W} slaps {O} across the face *','* the organ music swells *','* {W} storms out, sobbing *')
     hospital=@('* the heart monitor flatlines *','* {W} sprints down the corridor *')
     court=@('* the gallery gasps loudly *','* the gavel slams down *')
-    crime=@('* tires screech offscreen *','* {W} draws a sealed envelope *') }
-$Reveals = @('{O} is your long-lost {REL}!','{W} faked the entire death!','The baby was switched at birth!',
-             '{O} has been alive the WHOLE time!','It was {W} behind the mask!','The will names {O} as sole heir!',
-             '{W} and {O} were secretly married!','{O} pushed {W} off the balcony!')
+    crime=@('* tires screech offscreen *','* {W} draws a sealed envelope *')
+    cosmic=@('* the walls begin to breathe *','* a thousand eyes blink in unison *','* {W} gibbers in a dead tongue *',
+             '* the geometry folds in on itself *','* {ENTITY} stirs in the deep *','* shadows crawl up the walls *') }
+# Where the unlucky get shoved -- so the push-off shots vary their scenery.
+$Falls   = @('balcony','yacht','lighthouse','penthouse ledge','clocktower','gondola','rooftop helipad',
+             'cliffside terrace','grand staircase','opera box','ski lift','hot-air balloon')
+$Reveals = @{
+  any = @(
+    # --- identity & lineage ---
+    '{O} is your long-lost {REL}!','{O} is secretly your {REL}!','{W} has an identical evil twin!',
+    'The baby was switched at birth!','The twins were separated at birth!','{O} is actually {W} in disguise!',
+    # --- death & deception ---
+    '{W} faked the entire death!','{O} has been alive the WHOLE time!','The coma was completely faked!',
+    'The amnesia was a lie all along!','{O} never boarded that doomed flight!',
+    # --- money & power ---
+    'The will names {O} as sole heir!','{O} forged the inheritance letter!','{W} owns the company that owns {O}!',
+    'The mansion was mortgaged to {O}!','{W} secretly runs the rival empire!',
+    # --- love & betrayal ---
+    '{W} and {O} were secretly married!','It was {W} behind the mask!','{O} switched the DNA results!',
+    '{W} buried the evidence in the rose garden!','The wedding ring was a tracking device all along!',
+    # --- the classic shove (now with scenery) ---
+    '{O} pushed {W} off the {FALL}!','{W} shoved {O} off the {FALL}!','{O} dangled {W} over the {FALL}!')
+  soap = @(
+    '{W} is secretly pregnant... AGAIN!','The affair was on live television!','{O} owns the beach house now!',
+    '{W} left {O} at the altar for the {REL}!','The prenup was a forgery!','{O} is {W}''s boss AND secret ex-spouse!',
+    'The evil twin has returned... AGAIN!')
+  cosmic = @(
+    '{O} has been dead for a THOUSAND years!','{W} is the vessel of {ENTITY}!','You are ALL inside {O}''s dream!',
+    'The {REL} you buried was never human!','{ENTITY} has lived in these walls for eons!','{W} sold {O}''s soul to {ENTITY}!',
+    'The town of {PLACE} never existed!','{O} has cast no reflection for WEEKS!','It was {ENTITY} wearing {W}''s face all along!',
+    'The stars were right the WHOLE time!') }
 
 # ============================ Giant faces (the REVEAL) =======================
 $FaceHorror = @(@'
@@ -124,16 +173,31 @@ $FaceTears = @(@'
   '.          .'
    '-........-'
 '@ -split "\r?\n" | Where-Object { $_ -ne '' })
-$Big       = @{ horror=$FaceHorror; rage=$FaceRage; tears=$FaceTears }
-$SmallFace = @{ horror='(O_O)';     rage='(>_<)';   tears='(T_T)' }
+$FaceEldritch = @(@'
+  .-~"~"~"~-.
+ / (o)  (o)  \
+| (o) .--. (o)|
+|   ( O  O )  |
+|    ) vv (   |
+|  .-vVVVVv-. |
+| ( wwwwwwww )|
+ \  ))((  ))(/
+  } |/||\|/| {
+( vVvVvVvVvVv )
+  '~-.,__,.-~'
+'@ -split "\r?\n" | Where-Object { $_ -ne '' })
+$Big       = @{ horror=$FaceHorror; rage=$FaceRage; tears=$FaceTears; eldritch=$FaceEldritch }
+$SmallFace = @{ horror='(O_O)';     rage='(>_<)';   tears='(T_T)';    eldritch='(@_@)' }
 
 # ============================ Procedural show ================================
 function New-Show {
-    $genre = Pick @('soap','soap','soap','hospital','court','crime')
-    $place = Pick $Places; $adj1 = Pick $Adjs; $adj2 = Pick ($Adjs | Where-Object { $_ -ne $adj1 })
+    $genre = Pick @('soap','soap','soap','hospital','court','crime','cosmic','cosmic')
+    $place = if ($genre -eq 'cosmic') { Pick $Cosmos } else { Pick $Places }
+    $adj1 = Pick $Adjs; $adj2 = Pick ($Adjs | Where-Object { $_ -ne $adj1 }); $ent = Pick $Eldritch
     $a = Pick $Names; $b = Pick ($Names | Where-Object { $_ -ne $a }); $rel = Pick $Rels
     $title = switch ($genre) {
         'soap'     { Pick @("The $adj1 and the $adj2","$place Hearts","Passions of $place","Days of $place","$place After Dark") }
+        'cosmic'   { Pick @("As the Void Turns","Days of Our Doom","The Bold and the Unspeakable","The Young and the Eldritch","Passions of $place","General Madness","$place After Dark") }
         'hospital' { Pick @("General $place","$place Memorial","Code: $adj1") }
         'court'    { Pick @("$place Court","Order in $place","The $adj1 Verdict") }
         'crime'    { Pick @("$place P.D.","$place Homicide","$adj1 Streets") } }
@@ -142,12 +206,17 @@ function New-Show {
         $kind = Pick @('line','line','action'); $sp = Pick @($a,$b); $ot = if ($sp -eq $a) { $b } else { $a }
         $pool = if ($kind -eq 'line') { $Dialogue.any + $(if ($Dialogue.ContainsKey($genre)){$Dialogue[$genre]}else{@()}) }
                 else                  { $Actions.any  + $(if ($Actions.ContainsKey($genre)) {$Actions[$genre]} else{@()}) }
-        $txt = (Pick $pool).Replace('{W}',$sp).Replace('{O}',$ot).Replace('{REL}',$rel)
+        $txt = (Pick $pool).Replace('{W}',$sp).Replace('{O}',$ot).Replace('{REL}',$rel).Replace('{PLACE}',$place).Replace('{ENTITY}',(Pick $Eldritch))
         $beats += [pscustomobject]@{ Kind=$kind; Speaker=$sp; Text=$txt; Emo1=(Pick $Emotions); Emo2=(Pick $Emotions) } }
-    $reveal = (Pick $Reveals).Replace('{W}',$a).Replace('{O}',$b).Replace('{REL}',$rel)
-    $chyron = ("BREAKING: $a SEEN FLEEING $place MANSION   ***   $b VOWS REVENGE   ***   IS THE $rel REALLY DEAD?   ***   ").ToUpper()
+    $revPool = $Reveals.any + $(if ($Reveals.ContainsKey($genre)) { $Reveals[$genre] } else { @() })
+    $reveal = (Pick $revPool).Replace('{W}',$a).Replace('{O}',$b).Replace('{REL}',$rel).Replace('{FALL}',(Pick $Falls)).Replace('{PLACE}',$place).Replace('{ENTITY}',(Pick $Eldritch))
+    $chyron = if ($genre -eq 'cosmic') {
+        ("COSMIC ALERT: $place SLIPS FROM ALL MAPS   ***   $a SPEAKS IN A DEAD TONGUE   ***   THE STARS ARE NEARLY RIGHT   ***   $ent STIRS   ***   ").ToUpper()
+    } else {
+        ("BREAKING: $a SEEN FLEEING $place MANSION   ***   $b VOWS REVENGE   ***   IS THE $rel REALLY DEAD?   ***   ").ToUpper() }
+    $revExpr = if ($genre -eq 'cosmic') { Pick @('eldritch','eldritch','horror') } else { Pick @('horror','horror','rage','tears') }
     [pscustomobject]@{ Title=$title; Genre=$genre; Cast=@($a,$b); Beats=$beats
-                       Reveal=$reveal; RevealExpr=(Pick @('horror','horror','rage','tears')); Chyron=$chyron }
+                       Reveal=$reveal; RevealExpr=$revExpr; Chyron=$chyron }
 }
 
 # ============================ Helpers ========================================
@@ -246,7 +315,13 @@ function Build-Tv { param($cells,[string]$ch,[bool]$static)
     foreach ($c in $cells) { Row ('|'+(' '*5)+'| '+(Pad $c.Text $SW)+' |'+(' '*5)+'|') $c.Color }
     Row ('|'+(' '*5)+"'"+('-'*($SW+2))+"'"+(' '*5)+'|') $frame
     Row ('|'+(' '*($TW-2))+'|') $body
-    Row ('|'+(Pad ("   (CH $ch)        ( o )      ( o )        <  DRAMATRON 3000  >  ") ($TW-2))+'|') $body
+    # --- the set's own chrome decays as the dread climbs ---
+    $d = if ($script:Calm) { 0 } else { $script:Dread }
+    $brand = if ($d -gt 0.4 -and $rng.NextDouble() -lt ($d*0.7)) { Pick @('THE LEVEL 3000','DRAMATR0N ####','I SEE YOU 3000','D R E A D 3000','########## 3000') } else { 'DRAMATRON 3000' }
+    $eye   = if ($d -gt 0.5 -and $rng.NextDouble() -lt $d) { Pick @('@','X','*','O') } else { 'o' }
+    $chSh  = if ($d -gt 0.5 -and $rng.NextDouble() -lt ($d*0.5)) { Pick @('??','U ','YO','##') } else { $ch }
+    $brandCol = if ($d -gt 0.4 -and $brand -ne 'DRAMATRON 3000') { 'Red' } else { $body }
+    Row ('|'+(Pad ("   (CH $chSh)        ( $eye )      ( $eye )        <  $brand  >  ") ($TW-2))+'|') $brandCol
     Row ('|'+(Pad ("    (O) PWR        VOL        TINT              [|||||||||]       ") ($TW-2))+'|') $body
     Row ("'"+('-'*($TW-2))+"'") $body
     Row (Center '||                                        ||' $TW) $body
@@ -260,17 +335,92 @@ function Sting { param([string]$n) switch ($n) {
     'thunder'    { 1..3 | ForEach-Object { Beep (RNext 55 95) 110 } }
     'heartbeat'  { Beep 80 90; Beep 70 90 }
     'cliffhanger'{ Beep 392 220; Beep 330 220; Beep 247 650 }
-    'organ'      { Beep 262 120; Beep 330 120; Beep 392 220 } } }
+    'organ'      { Beep 262 120; Beep 330 120; Beep 392 220 }
+    'glitch'     { 1..3 | ForEach-Object { Beep (RNext 1100 2600) 16 } }          # data-corruption chirp
+    'dread'      { 1..5 | ForEach-Object { Beep (RNext 38 62) 90 }; Beep 41 900 } } }   # sub-bass drone
 
-function Show-Live { param($cells,[string]$ch,[bool]$static,[int]$indent=3)
+# ============================ The level is aware of you ======================
+# A dread meter climbs the longer you watch. As it rises the broadcast decays:
+# bit-rot creeps into the picture, messages bleed through (escalating tiers),
+# and the set's own chrome glitches -- until THE LEVEL looks back. See Build-Tv
+# (chrome glitch) and Invoke-Haunt (the payoff).
+$script:Calm  = [bool]$Calm
+$script:Live  = $false
+$script:Force = $false
+$script:Dread = [Math]::Min(1.0, [Math]::Max(0.0, $StartDread))
+$Viewer = if ($env:USERNAME) { ($env:USERNAME -replace '[^A-Za-z0-9]','').ToUpper() } else { 'VIEWER' }
+if (-not $Viewer) { $Viewer = 'VIEWER' }
+$GlitchGlyph = '#%&@*+=:<>/\|~^".'.ToCharArray()
+$Whispers = @{   # what the broadcast says, by how aware it has become (tier <- dread)
+  1 = @('THE LEVEL IS IGNORING YOU','PLEASE DO NOT ADJUST YOUR SET','WE KNOW YOU ARE WATCHING',
+        'THIS PROGRAM SEES YOU','STOP READING THE PLACEHOLDERS','THE LEVEL IS IGNORING YOU')
+  2 = @('WHY ARE YOU STILL WATCHING','THIS WAS NEVER A SHOW','I CAN SEE YOUR REFLECTION',
+        'THE ACTORS KNOW YOUR NAME','THERE IS NO CHANNEL {N}','TURN AROUND, {VIEWER}')
+  3 = @('CHANGE THE CHANNEL. NOW.','IT IS IN THE ROOM WITH YOU','YOU WERE NEVER THE VIEWER',
+        'THE LEVEL IS LOOKING BACK','{VIEWER}, WE HAVE BEEN WAITING','DO NOT LET IT FINISH') }
+function Get-Whisper {
+    $tier = if ($script:Dread -ge 0.66) { 3 } elseif ($script:Dread -ge 0.33) { 2 } else { 1 }
+    $chN  = if ($script:ch) { '{0:00}' -f $script:ch } else { '13' }
+    (Pick $Whispers[$tier]).Replace('{VIEWER}',$Viewer).Replace('{N}',$chN) }
+function Rot { param([string]$t,[double]$p)              # bit-rot: decay a line of picture
+    if ($p -le 0) { return $t }
+    $a=$t.ToCharArray()
+    for ($i=0;$i -lt $a.Length;$i++){ if ($a[$i] -ne ' ' -and $rng.NextDouble() -lt $p){ $a[$i]=$GlitchGlyph[$rng.Next($GlitchGlyph.Count)] } }
+    -join $a }
+function Add-Glitch { param($cells)
+    if ($script:Calm) { return ,$cells }
+    $d=$script:Dread
+    # 1. bit-rot creeps into the ordinary picture as dread rises
+    if ($d -gt 0.2) {
+        $p=($d-0.2)*0.18
+        $cells=@($cells | ForEach-Object { if ($rng.NextDouble() -lt ($d*0.7)) { Cell (Rot $_.Text $p) $_.Color } else { $_ } }) }
+    # 2. messages bleed through -- more often, and as full takeovers, the higher the dread
+    $take=$d*0.12; $line=0.05+$d*0.22; $roll=$rng.NextDouble()
+    $cols=@('Red','DarkRed','Magenta','White','Gray')
+    if ($script:Force -or $roll -lt $take) {                                      # it is EVERYWHERE
+        if ($script:Live) { Sting glitch }
+        $m=(Get-Whisper)+'   '; $tile=$m; while ($tile.Length -lt ($SW*2)){ $tile+=$m }
+        $g=@($cells | ForEach-Object { Cell ($tile.Substring($rng.Next($m.Length),$SW)) (Pick $cols) }); return ,$g }
+    elseif ($roll -lt ($take+$line)) {                                           # one line breaks through
+        $new=@($cells); $i=$rng.Next($new.Count); $new[$i]=Cell (Center (Get-Whisper) $SW) (Pick $cols); return ,$new }
+    ,$cells }
+
+function Show-Raw { param($cells,[string]$ch,[bool]$static,[int]$indent=3)       # render with no glitch pass
     $tv = Build-Tv $cells $ch $static
     Clear-Host; Write-Host ''
     foreach ($l in $tv) { Write-Host ((' '*$indent)+$l.Text) -ForegroundColor $l.Color } }
+function Show-Live { param($cells,[string]$ch,[bool]$static,[int]$indent=3)
+    if (-not $script:Calm) { $script:Dread = [Math]::Min(1.0, $script:Dread + 0.0045) }   # watching costs you
+    Show-Raw (Add-Glitch $cells) $ch $static $indent }
 function Show-Plain { param($cells,[string]$ch,[bool]$static)
-    (Build-Tv $cells $ch $static) | ForEach-Object { $_.Text } }
+    (Build-Tv (Add-Glitch $cells) $ch $static) | ForEach-Object { $_.Text } }
 
 function Invoke-Flash { param([string]$ch) 1..2 | ForEach-Object { Show-Live (Get-FlashShot) $ch $false; Beep (RNext 60 90) 70; Start-Sleep -Milliseconds 55 } }
 function Invoke-Shake { param($cells,[string]$ch) foreach ($o in 6,1,5,0,4,2) { Show-Live $cells $ch $false $o; Start-Sleep -Milliseconds 35 } }
+
+# THE PAYOFF -- once dread peaks the broadcast stops pretending and looks at you.
+function Invoke-Haunt {
+    $cs = '{0:00}' -f $script:ch
+    $line = (Pick @('{V}.','{V}, CAN YOU HEAR ME?','WE SEE YOU, {V}.','DO NOT LOOK AWAY, {V}.',
+                    'THE LEVEL HAS YOUR FACE NOW, {V}.','YOU SHOULD HAVE CHANGED THE CHANNEL, {V}.')).Replace('{V}',$Viewer)
+    $black = @(1..$SH | ForEach-Object { Cell (' '*$SW) 'Black' })
+    # the room collapses to black
+    foreach ($s in 0..3) { Show-Raw (Dim (Get-CardShot ' ' ' ' 'White') $s) $cs $false; Start-Sleep -Milliseconds 90 }
+    Sting dread
+    # it types its message, one character at a time, in the dark
+    $shown=''
+    foreach ($c in $line.ToCharArray()) {
+        $shown += $c
+        $rows=@($black); $rows[7]=Cell (Center $shown $SW) 'Red'
+        Show-Raw $rows $cs $false                      # raw: no glitch pass, so the words stay legible
+        Beep (RNext 70 120) 30; Start-Sleep -Milliseconds 60
+        if (Test-Quit) { throw 'quit' } }
+    Start-Sleep -Milliseconds 900
+    Invoke-Flash $cs                                   # it blinks
+    $rows=@($black); $rows[7]=Cell (Center '. . . the level looks away . . .' $SW) 'DarkGray'
+    Show-Raw $rows $cs $false; Beep 60 500; Start-Sleep -Milliseconds 1200
+    $script:Dread = 0.2 }                               # the dread subsides... for now
+function Maybe-Haunt { if (-not $script:Calm -and $script:Dread -ge 0.85) { Invoke-Haunt; return $true }; return $false }
 
 # ============================ The director ===================================
 function Invoke-Episode { param($show)
@@ -288,6 +438,7 @@ function Invoke-Episode { param($show)
             if ($stormy -and $f -eq 5) { Invoke-Flash ('{0:00}' -f $script:ch); Sting thunder; Invoke-Shake (Get-DialogueShot $show $beat $stormy $chy) ('{0:00}' -f $script:ch) }
             Start-Sleep -Milliseconds 130; if (Test-Quit) { throw 'quit' }
         }
+        if (Maybe-Haunt) { return }                    # if it surfaces here, the episode never finishes
     }
     # 3. THE REVEAL  -- heartbeat builds, dolly-zoom snaps onto the face, sting + flash + shake
     foreach ($h in 1..3) { Sting heartbeat; Start-Sleep -Milliseconds 260 }
@@ -306,25 +457,37 @@ function Invoke-Episode { param($show)
         $script:ch += RNext 1 4; if ($script:ch -gt 99) { $script:ch = RNext 2 10 }
         Show-Live (Get-StaticShot ('{0:00}' -f $script:ch)) ('{0:00}' -f $script:ch) $true
         Beep (RNext 200 600) 25; Start-Sleep -Milliseconds 70; if (Test-Quit) { throw 'quit' }
-    } }
+    }
+    if (Maybe-Haunt) { return } }                      # ...or it waits for the dead air between shows
 
 # ============================ STORYBOARD =====================================
 if ($Storyboard) {
     $ch = RNext 2 10
     for ($e=1; $e -le $Scenes; $e++) {
-        $show = New-Show; $cs='{0:00}' -f $ch
+        $show = New-Show; $script:ch = $ch; $cs='{0:00}' -f $ch
         "##### EPISODE $e : $($show.Title) #####"; ''
+        $script:Dread = if ($Calm) { 0 } else { 0.05 }
         '  [ COLD OPEN -- PREVIOUSLY ON ]'
         Show-Plain (Get-CardShot 'PREVIOUSLY,  ON . . .' $show.Title.ToUpper() 'White') $cs $false; ''
-        '  [ ACT ONE -- storm rolls in: rain, BREAKING NEWS chyron, dialogue ]'
+        $script:Dread = if ($Calm) { 0 } else { 0.42 }
+        '  [ ACT ONE -- dread rising: bit-rot begins to creep into the picture ]'
         Show-Plain (Get-DialogueShot $show $show.Beats[0] $true 0) $cs $false; ''
         '  [ *** LIGHTNING + THUNDER + SCREEN SHAKE *** ]'
         Show-Plain (Get-FlashShot) $cs $false; ''
-        '  [ THE REVEAL -- dolly-zoom + "dun dun DUUUN" ]'
+        $script:Dread = if ($Calm) { 0 } else { 0.72 }
+        '  [ THE REVEAL -- the signal decays, the set''s own chrome glitches ]'
         Show-Plain (Get-ZoomShot $show 'big' $show.Reveal) $cs $false; ''
-        '  [ CLIFFHANGER -- fade to black ]'
-        Show-Plain (Get-CardShot 'TO BE CONTINUED . . .' ("next week on $($show.Title)") 'White') $cs $false; ''
+        if ($Calm) {
+            '  [ CLIFFHANGER -- fade to black ]'
+            Show-Plain (Get-CardShot 'TO BE CONTINUED . . .' ("next week on $($show.Title)") 'White') $cs $false; ''
+        } else {
+            $script:Dread = 0.97; $script:Force = $true
+            '  [ *** THE BROADCAST NOTICES YOU *** ]'
+            Show-Plain (Get-CardShot 'TO BE CONTINUED . . .' ("next week on $($show.Title)") 'White') $cs $false
+            $script:Force = $false; ''
+        }
         if ($e -lt $Scenes) { $ch += RNext 1 4; if ($ch -gt 99){$ch=RNext 2 10}
+            $script:ch = $ch; $script:Dread = if ($Calm) { 0 } else { 0.3 }
             '  . : .  *kkrrshhh* changing channel  . : .'
             Show-Plain (Get-StaticShot ('{0:00}' -f $ch)) ('{0:00}' -f $ch) $true; '' }
     }
@@ -336,7 +499,7 @@ try { [void][Console]::WindowWidth } catch {
     Write-Warning 'Live mode needs a real console. Try: .\Drama-TV.ps1 -Storyboard'; return }
 $prevCursor = [Console]::CursorVisible
 try { [Console]::CursorVisible=$false } catch {}
-$script:ch = RNext 2 10; $surfed = 0
+$script:ch = RNext 2 10; $surfed = 0; $script:Live = $true
 function Test-Quit { try { if ([Console]::KeyAvailable){[void][Console]::ReadKey($true);return $true} } catch {}; return $false }
 
 try {

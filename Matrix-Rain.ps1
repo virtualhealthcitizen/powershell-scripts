@@ -1,123 +1,191 @@
 <#
 .SYNOPSIS
-    "Matrix" digital rain in the console — falling streams of glyphs with
-    glowing white heads and fading green trails.
+    "Matrix" digital rain -- falling glyph streams with bright heads and 256-colour
+    fade trails, glyph flicker, colour themes, and hidden messages that decode out
+    of the rain ("WAKE UP", "THE MATRIX HAS YOU", ...).
 
 .DESCRIPTION
-    Each column is an independent falling stream with its own speed and trail
-    length. The head is bright white, the character just behind it green, and
-    the rest of the trail persists as green until the tail erases it. Rendering
-    uses direct cursor positioning (no Clear-Host) so the rain flows smoothly.
+    Each column is an independent stream with its own speed, length and glyphs.
+    The head is bright white; the trail fades through a theme palette to near
+    black. Trailing glyphs occasionally mutate, and every so often a stream
+    resolves into a readable message before dissolving back into noise.
 
-    Requires a real interactive console (Windows Terminal / conhost / pwsh
-    window). It will not work with redirected/captured output.
+    Live mode does a flicker-free full-frame ANSI redraw and needs a real
+    console. -Storyboard prints frames to stdout (reproducible with -Seed).
 
-.PARAMETER DurationSec
-    Seconds to run. 0 (default) runs until you press a key.
-
-.PARAMETER DelayMs
-    Milliseconds between frames. Lower = faster rain. Default 45.
-
-.PARAMETER Density
-    Fraction of columns active as rain streams (0.1 - 1.0). Default 0.7.
+.PARAMETER DurationSec Seconds to run live. 0 (default) = until a key is pressed.
+.PARAMETER DelayMs     Milliseconds between frames. Lower = faster. Default 55.
+.PARAMETER Density     Fraction of columns active (0.1 - 1.0). Default 0.7.
+.PARAMETER Theme       green (default) | amber | ice | blood | rainbow.
+.PARAMETER NoMessages  Disable the hidden decoded messages.
+.PARAMETER NoColor     Render monochrome (for limited terminals).
+.PARAMETER Storyboard  Print frames to stdout and exit.
+.PARAMETER Frames      Storyboard: how many frames to print. Default 8.
+.PARAMETER Seed        Fix the RNG for reproducible output. 0 = random.
 
 .EXAMPLE
     .\Matrix-Rain.ps1
-
 .EXAMPLE
-    .\Matrix-Rain.ps1 -DurationSec 10 -DelayMs 30 -Density 0.9
+    .\Matrix-Rain.ps1 -Theme amber -Density 0.9 -DelayMs 35
+.EXAMPLE
+    .\Matrix-Rain.ps1 -Storyboard -Seed 7 -Theme ice
 #>
 [CmdletBinding()]
 param(
     [int]$DurationSec = 0,
-    [int]$DelayMs     = 45,
-    [ValidateRange(0.1, 1.0)][double]$Density = 0.7
+    [int]$DelayMs     = 55,
+    [ValidateRange(0.1, 1.0)][double]$Density = 0.7,
+    [ValidateSet('green','amber','ice','blood','rainbow')][string]$Theme = 'green',
+    [switch]$NoMessages,
+    [switch]$NoColor,
+    [switch]$Storyboard,
+    [int]$Frames = 8,
+    [int]$Seed   = 0
 )
 
-# --- Build the glyph pool: katakana + digits + a few symbols ------------------
-$glyphs = [System.Collections.Generic.List[char]]::new()
-0x30A0..0x30FF | ForEach-Object { $glyphs.Add([char]$_) }
-'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ#$%&*+=<>?@'.ToCharArray() |
-    ForEach-Object { $glyphs.Add($_) }
-$rand = [Random]::new()
-function Get-Glyph { $glyphs[$rand.Next($glyphs.Count)] }
+# Enable ANSI / virtual-terminal processing (Windows Terminal already has it).
+if (-not $NoColor) {
+    try {
+        Add-Type -ErrorAction Stop @"
+using System;
+using System.Runtime.InteropServices;
+public static class MRVT {
+  [DllImport("kernel32.dll")] static extern IntPtr GetStdHandle(int n);
+  [DllImport("kernel32.dll")] static extern bool GetConsoleMode(IntPtr h, out uint m);
+  [DllImport("kernel32.dll")] static extern bool SetConsoleMode(IntPtr h, uint m);
+  public static void Enable(){ var h=GetStdHandle(-11); uint m; if(GetConsoleMode(h,out m)) SetConsoleMode(h, m|0x0004u); }
+}
+"@
+        [MRVT]::Enable()
+    } catch { }
+}
 
-# --- Console geometry --------------------------------------------------------
-try {
-    $w = [Console]::WindowWidth  - 1   # leave last column to avoid auto-scroll
-    $h = [Console]::WindowHeight - 1
-} catch {
-    Write-Warning 'Matrix-Rain needs a real interactive console (not redirected output).'
+# ============================ RNG + glyphs ===================================
+$seedVal = if ($Seed -gt 0) { $Seed } else { [Environment]::TickCount }
+$rng = [Random]::new($seedVal)
+$script:Color = -not $NoColor
+
+$glyphList = [System.Collections.Generic.List[char]]::new()
+0x30A0..0x30FF | ForEach-Object { $glyphList.Add([char]$_) }              # katakana
+'0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ#$%&*+=<>?@'.ToCharArray() | ForEach-Object { $glyphList.Add($_) }
+$Glyphs = $glyphList.ToArray()
+function Get-Glyph { $Glyphs[$rng.Next($Glyphs.Length)] }
+
+# 256-colour fade ramps: index 0 = bright head, last = dim tail.
+$Ramps = @{
+    green = @(231,48,46,40,34,28,22)
+    amber = @(231,226,220,214,208,166,94)
+    ice   = @(231,159,117,75,39,33,27)
+    blood = @(231,224,203,196,160,124,88)
+}
+$RainbowCols = @(196,202,208,226,46,51,27,93,201,213)
+
+$Messages = @('WAKE UP','THE MATRIX HAS YOU','FOLLOW THE WHITE RABBIT','KNOCK KNOCK',
+              'THERE IS NO SPOON','FREE YOUR MIND','SYSTEM FAILURE','HELLO NEO','LOOK CLOSER')
+
+# ============================ Simulation =====================================
+function Init-State { param([int]$cols,[int]$rows)
+    $st = [pscustomobject]@{
+        W=$cols; H=$rows
+        On=[bool[]]::new($cols); Y=[double[]]::new($cols); Sp=[double[]]::new($cols)
+        Len=[int[]]::new($cols); Hue=[int[]]::new($cols)
+        Gly=[object[]]::new($rows)
+        Msgs=(New-Object System.Collections.ArrayList) }
+    for ($y=0; $y -lt $rows; $y++) { $r=[char[]]::new($cols); for ($x=0;$x -lt $cols;$x++){$r[$x]=' '}; $st.Gly[$y]=$r }
+    for ($x=0; $x -lt $cols; $x++) {
+        $st.On[$x]  = ($rng.NextDouble() -lt $Density)
+        $st.Y[$x]   = -$rng.Next(0,$rows)
+        $st.Sp[$x]  = 0.25 + $rng.NextDouble()*0.95
+        $st.Len[$x] = $rng.Next(5,[Math]::Max(6,$rows-2))
+        $st.Hue[$x] = $RainbowCols[$rng.Next($RainbowCols.Count)] }
+    $st }
+function Recycle { param($st,[int]$x)
+    $st.Y[$x]   = -$rng.Next(0,[int]($st.H/2))
+    $st.Sp[$x]  = 0.25 + $rng.NextDouble()*0.95
+    $st.Len[$x] = $rng.Next(5,[Math]::Max(6,$st.H-2))
+    $st.Hue[$x] = $RainbowCols[$rng.Next($RainbowCols.Count)] }
+function Step-Rain { param($st)
+    for ($x=0; $x -lt $st.W; $x++) {
+        if (-not $st.On[$x]) { continue }
+        $prev=[int][Math]::Floor($st.Y[$x]); $st.Y[$x]+=$st.Sp[$x]; $head=[int][Math]::Floor($st.Y[$x])
+        if ($head -ne $prev -and $head -ge 0 -and $head -lt $st.H) { $st.Gly[$head][$x] = Get-Glyph }
+        if ($rng.NextDouble() -lt 0.12) {                                   # flicker a trailing glyph
+            $r = $head - $rng.Next(0,$st.Len[$x]); if ($r -ge 0 -and $r -lt $st.H) { $st.Gly[$r][$x] = Get-Glyph } }
+        if (($head - $st.Len[$x]) -gt $st.H) { Recycle $st $x } }
+    if (-not $NoMessages -and $rng.NextDouble() -lt 0.045) {                 # a message tries to surface
+        $m = $Messages[$rng.Next($Messages.Count)]; $vert = ($rng.Next(2) -eq 0)
+        $mx = if ($vert) { $rng.Next(0,$st.W) } else { $rng.Next(0,[Math]::Max(1,$st.W-$m.Length)) }
+        $my = if ($vert) { $rng.Next(1,[Math]::Max(2,$st.H-$m.Length-1)) } else { $rng.Next(1,$st.H-1) }
+        [void]$st.Msgs.Add([pscustomobject]@{ X=$mx; Y=$my; Text=$m; T=$rng.Next(10,18); Vert=$vert }) }
+    $keep = New-Object System.Collections.ArrayList
+    foreach ($mm in $st.Msgs) { $mm.T--; if ($mm.T -gt 0) { [void]$keep.Add($mm) } }
+    $st.Msgs = $keep }
+
+function Render-Rain { param($st)
+    $Ch=[object[]]::new($st.H); $Co=[object[]]::new($st.H)
+    for ($y=0;$y -lt $st.H;$y++){ $rc=[char[]]::new($st.W); $cc=[int[]]::new($st.W)
+        for ($x=0;$x -lt $st.W;$x++){ $rc[$x]=' '; $cc[$x]=-1 }; $Ch[$y]=$rc; $Co[$y]=$cc }
+    $ramp = if ($Theme -eq 'rainbow') { $null } else { $Ramps[$Theme] }
+    for ($x=0;$x -lt $st.W;$x++) {
+        if (-not $st.On[$x]) { continue }
+        $head=[int][Math]::Floor($st.Y[$x]); $len=$st.Len[$x]
+        for ($d=0; $d -lt $len; $d++) {
+            $r=$head-$d; if ($r -lt 0 -or $r -ge $st.H) { continue }
+            $g=$st.Gly[$r][$x]; if ($g -eq ' ') { $g=Get-Glyph; $st.Gly[$r][$x]=$g }
+            if ($ramp) { $frac=$d/[Math]::Max(1,$len-1); $col=$ramp[[int][Math]::Round($frac*($ramp.Count-1))] }
+            else       { $col = if ($d -eq 0) { 231 } else { $st.Hue[$x] } }
+            $Ch[$r][$x]=$g; $Co[$r][$x]=$col } }
+    foreach ($m in $st.Msgs) {                                              # decoded messages in bright white
+        for ($i=0;$i -lt $m.Text.Length;$i++) {
+            $cx = if ($m.Vert) { $m.X } else { $m.X+$i }
+            $cy = if ($m.Vert) { $m.Y+$i } else { $m.Y }
+            if ($cx -ge 0 -and $cx -lt $st.W -and $cy -ge 0 -and $cy -lt $st.H) { $Ch[$cy][$cx]=$m.Text[$i]; $Co[$cy][$cx]=231 } } }
+    [pscustomobject]@{ Ch=$Ch; Co=$Co; W=$st.W; H=$st.H } }
+
+function Frame-Ansi { param($f)
+    $e=[char]27; $sb=[System.Text.StringBuilder]::new()
+    for ($y=0;$y -lt $f.H;$y++) { $cur=-1
+        for ($x=0;$x -lt $f.W;$x++) { $ch=$f.Ch[$y][$x]
+            if ($script:Color -and $ch -ne ' ') { $cc=$f.Co[$y][$x]; if ($cc -ne $cur) { [void]$sb.Append("$e[38;5;${cc}m"); $cur=$cc } }
+            [void]$sb.Append($ch) }
+        if ($script:Color) { [void]$sb.Append("$e[0m"); $cur=-1 }
+        if ($y -lt $f.H-1) { [void]$sb.Append("`n") } }
+    $sb.ToString() }
+function Frame-Plain { param($f) for ($y=0;$y -lt $f.H;$y++) { -join $f.Ch[$y] } }
+
+# ============================ STORYBOARD =====================================
+if ($Storyboard) {
+    $script:Color = $false
+    $st = Init-State 64 22
+    1..($st.H+4) | ForEach-Object { Step-Rain $st }                         # warm up so it is raining
+    "#####  M A T R I X   R A I N   ($Theme)  #####"; ''
+    for ($f=1; $f -le $Frames; $f++) { Step-Rain $st; "  [ frame $f ]"; Frame-Plain (Render-Rain $st); '' }
     return
 }
-if ($w -lt 2 -or $h -lt 2) { Write-Warning 'Console too small.'; return }
 
-# --- Per-column state --------------------------------------------------------
-$colY     = New-Object 'double[]' $w   # head position (fractional for sub-step speed)
-$colSpeed = New-Object 'double[]' $w   # rows advanced per frame
-$colLen   = New-Object 'int[]'    $w   # trail length
-$colOn    = New-Object 'bool[]'   $w   # is this column an active stream?
+# ============================ LIVE ===========================================
+try { $cw=[Console]::WindowWidth; $chh=[Console]::WindowHeight } catch {
+    Write-Warning 'Matrix-Rain needs a real console. Try: .\Matrix-Rain.ps1 -Storyboard'; return }
+$cols = $cw - 1; $rows = $chh - 1                                           # spare last col/row to avoid scroll
+if ($cols -lt 2 -or $rows -lt 2) { Write-Warning 'Console too small.'; return }
 
-for ($x = 0; $x -lt $w; $x++) {
-    $colOn[$x]    = ($rand.NextDouble() -lt $Density)
-    $colY[$x]     = -$rand.Next(0, $h)              # stagger start above screen
-    $colSpeed[$x] = 0.25 + $rand.NextDouble() * 0.9 # varied fall speeds
-    $colLen[$x]   = $rand.Next(4, [Math]::Max(5, $h - 2))
-}
-
-# --- Setup terminal ----------------------------------------------------------
 $prevCursor = [Console]::CursorVisible
-[Console]::CursorVisible = $false
+try { [Console]::CursorVisible=$false } catch {}
 Clear-Host
+$st = Init-State $cols $rows
 $startTicks = [Environment]::TickCount
-
 try {
     while ($true) {
-        for ($x = 0; $x -lt $w; $x++) {
-            if (-not $colOn[$x]) { continue }
-
-            $prevHead = [int][Math]::Floor($colY[$x])
-            $colY[$x] += $colSpeed[$x]
-            $head      = [int][Math]::Floor($colY[$x])
-            if ($head -eq $prevHead) { continue }   # not moved a whole row yet
-
-            # bright white head
-            if ($head -ge 0 -and $head -le $h) {
-                [Console]::SetCursorPosition($x, $head)
-                [Console]::ForegroundColor = 'White'
-                [Console]::Write((Get-Glyph))
-            }
-            # the char just behind the head cools to green
-            if ($prevHead -ge 0 -and $prevHead -le $h) {
-                [Console]::SetCursorPosition($x, $prevHead)
-                [Console]::ForegroundColor = 'Green'
-                [Console]::Write((Get-Glyph))
-            }
-            # erase the tail
-            $tail = $head - $colLen[$x]
-            if ($tail -ge 0 -and $tail -le $h) {
-                [Console]::SetCursorPosition($x, $tail)
-                [Console]::Write(' ')
-            }
-            # recycle the stream once its tail clears the bottom
-            if ($tail -gt $h) {
-                $colY[$x]     = -$rand.Next(0, [int]($h / 2))
-                $colSpeed[$x] = 0.25 + $rand.NextDouble() * 0.9
-                $colLen[$x]   = $rand.Next(4, [Math]::Max(5, $h - 2))
-            }
-        }
-
+        Step-Rain $st
+        [Console]::SetCursorPosition(0,0); [Console]::Out.Write((Frame-Ansi (Render-Rain $st)))
         Start-Sleep -Milliseconds $DelayMs
-
-        if ($DurationSec -gt 0 -and
-            (([Environment]::TickCount - $startTicks) / 1000) -ge $DurationSec) { break }
-
+        if ($DurationSec -gt 0 -and ((([Environment]::TickCount-$startTicks)/1000) -ge $DurationSec)) { break }
         try { if ([Console]::KeyAvailable) { [void][Console]::ReadKey($true); break } } catch { }
     }
 }
 finally {
-    [Console]::ResetColor()
-    [Console]::CursorVisible = $prevCursor
-    [Console]::SetCursorPosition(0, $h)
+    if ($script:Color) { [Console]::Out.Write("$([char]27)[0m") }
+    [Console]::ResetColor(); try { [Console]::CursorVisible=$prevCursor } catch {}
+    try { [Console]::SetCursorPosition(0,$rows) } catch {}
     Write-Host "`nWake up, Neo..." -ForegroundColor Green
 }

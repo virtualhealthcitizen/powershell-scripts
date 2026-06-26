@@ -3,14 +3,18 @@
     DRAMA DASH -- a cinematic ASCII endless-runner. You are a soap-opera star
     sprinting away from your scandal. JUMP the wedding cakes & tombstones, DUCK
     the thrown vases & paparazzi drones. Lightning splits a day/night sky, the
-    pace climbs, and a crash ends in "TO BE CONTINUED..." with your distance.
+    pace climbs, and every crash is, of course, declared a VICTORY -- the game
+    is supremely, baselessly confident you won, and says so mid-run too.
 
 .DESCRIPTION
     A real-time terminal game: non-blocking input, jump physics with gravity,
     parallax scenery, day/night cycle with thunderstorms, and flicker-free
     full-frame redraw (ANSI 256-colour). High score persists to %TEMP%.
 
-    Controls:  SPACE / UP / W = jump    DOWN / S = duck    R = restart    Q = quit
+    Controls:  SPACE / UP / W = jump (tap again mid-air to DOUBLE JUMP)
+               DOWN / S = duck    R = restart    Q = quit
+    Grab the @ roses for a rising combo multiplier; clean last-second dodges
+    score CLOSE! near-miss bonuses. Lightning rakes a rainy night sky.
 
 .PARAMETER NoColor     Render without ANSI colour (for limited terminals).
 .PARAMETER Silent      Disable sound cues ([Console]::Beep).
@@ -66,7 +70,12 @@ $HISCORE_FILE = Join-Path $env:TEMP 'drama-dash-highscore.txt'
 # 256-colour palette
 $C = @{ star=252; moon=231; cloud=251; hill=240; ground=100; dirt=94; grass=70
         run=220; jump=213; duck=223; gObs=196; aObs=201; hud=231; title=226
-        bolt=231; flash=231; dead=196; tag=244 }
+        bolt=231; flash=231; dead=196; tag=244
+        rose=205; combo=213; pop=190; rain=67 }
+
+# The game is unshakeably, baselessly certain that you won. No question about it.
+$VictoryTags = @('FLAWLESS','TEXTBOOK','EFFORTLESS','NEVER IN DOUBT','TOO EASY','DOMINANT',
+                 'EXACTLY AS PLANNED','UNDEFEATED','A MASTERCLASS','THEY NEVER STOOD A CHANCE')
 
 # ============================ Sprites ========================================
 $RUN_A  = @(' o ','/|\','/ \')
@@ -109,9 +118,12 @@ function Get-Hi { if (Test-Path $HISCORE_FILE) { try { [int](Get-Content $HISCOR
 function Set-Hi { param([int]$v) try { $v | Set-Content $HISCORE_FILE } catch { } }
 
 function New-Game {
-    @{ y=0.0; vy=0.0; grounded=$true; duck=0; frame=0; traveled=0.0
+    @{ y=0.0; vy=0.0; grounded=$true; jumps=0; duck=0; frame=0; traveled=0.0
        speed=1.2; score=0.0; obs=(New-Object 'System.Collections.Generic.List[object]')
-       lastSpawn=-22.0; gap=22.0; night=$false; flash=0; boltX=0; hi=(Get-Hi); screen='title' } }
+       lastSpawn=-22.0; gap=22.0; night=$false; flash=0; boltX=0; hi=(Get-Hi); screen='title'
+       roses=(New-Object 'System.Collections.Generic.List[object]'); lastRose=-12.0; roseGap=28.0
+       combo=0; comboT=0; pops=(New-Object 'System.Collections.Generic.List[object]')
+       victory=0; victoryTag=''; winBrag='' } }
 
 function Player-Sprite { param($g)
     if ($g.duck -gt 0 -and $g.grounded) {
@@ -126,7 +138,31 @@ function Spawn-Obstacle { param($g)
     else                       { $art = Pick $AIR;    $kind='air' }
     $ow = ($art | Measure-Object -Property Length -Maximum).Maximum
     $top = if ($kind -eq 'ground') { $SURFACE - ($art.Count-1) } else { $SURFACE - 3 }
-    $g.obs.Add(@{ x=([double]$W); art=$art; top=$top; w=$ow; kind=$kind }) }
+    $g.obs.Add(@{ x=([double]$W); art=$art; top=$top; w=$ow; kind=$kind; nm=$false }) }
+
+function Mult { param($g) [Math]::Min(5, 1 + $g.combo) }                 # rose/near-miss multiplier
+function Spawn-Rose { param($g)
+    $hi  = ($rng.Next(100) -lt 50)                                       # high = grab mid-jump, low = grab running
+    $row = if ($hi) { $SURFACE - (RNext 5 7) } else { $SURFACE - 1 }
+    $g.roses.Add(@{ x=([double]$W); y=$row }) }
+function Collect-Roses { param($g)
+    if ($g.roses.Count -eq 0) { return }
+    $ps = Player-Sprite $g; $pc = Sprite-Cells $ps.art $ps.top $PX
+    for ($i=$g.roses.Count-1; $i -ge 0; $i--) {
+        $r=$g.roses[$i]; $rx=[int][Math]::Round($r.x); $hit=$false
+        foreach ($dy in -1,0,1) { foreach ($dx in -1,0,1) {
+            if ($pc.ContainsKey((($r.y+$dy)*1000)+($rx+$dx))) { $hit=$true; break } }; if ($hit){break} }
+        if ($hit) {
+            $g.roses.RemoveAt($i); $g.combo++; $g.comboT=90; $pts=25*(Mult $g); $g.score+=$pts
+            $g.pops.Add(@{ x=$rx; y=$r.y; t=12; text=("+{0}" -f $pts); col=$C.pop }); Sound point } } }
+function Near-Miss { param($g)
+    foreach ($o in $g.obs) {
+        $ox=[int][Math]::Round($o.x)
+        if (-not $o.nm -and $ox -le $PX -and ($ox+$o.w) -ge $PX) {        # obstacle is at the player column
+            $dodging = (($o.kind -eq 'ground') -and (-not $g.grounded)) -or (($o.kind -eq 'air') -and ($g.duck -gt 0))
+            if ($dodging) {
+                $o.nm=$true; $g.combo++; $g.comboT=90; $g.score+=15
+                $g.pops.Add(@{ x=$PX; y=($SURFACE-3); t=12; text='CLOSE!'; col=$C.combo }); Sound point } } } }
 
 function Step-Game { param($g)
     $g.frame++
@@ -138,7 +174,7 @@ function Step-Game { param($g)
     elseif ($g.night -and $rng.Next(1000) -lt 9) { $g.flash=2; $g.boltX=(RNext 12 ($W-6)); Sound thunder }
 
     # physics
-    if (-not $g.grounded) { $g.y += $g.vy; $g.vy -= $GRAV; if ($g.y -le 0) { $g.y=0; $g.vy=0; $g.grounded=$true } }
+    if (-not $g.grounded) { $g.y += $g.vy; $g.vy -= $GRAV; if ($g.y -le 0) { $g.y=0; $g.vy=0; $g.grounded=$true; $g.jumps=0 } }
     if ($g.duck -gt 0) { $g.duck-- }
 
     # obstacles: move, spawn, despawn
@@ -147,6 +183,21 @@ function Step-Game { param($g)
     if (($g.traveled - $g.lastSpawn) -ge $g.gap) {
         Spawn-Obstacle $g; $g.lastSpawn=$g.traveled
         $g.gap = RNext ([int](16 + $g.speed*5)) ([int](30 + $g.speed*7)) }
+
+    # roses: move, spawn, despawn (kept off the obstacle beat so they sit in the gaps)
+    foreach ($r in $g.roses) { $r.x -= $g.speed }
+    for ($i=$g.roses.Count-1; $i -ge 0; $i--) { if ($g.roses[$i].x -lt -1) { $g.roses.RemoveAt($i) } }
+    if (($g.traveled - $g.lastRose) -ge $g.roseGap) { Spawn-Rose $g; $g.lastRose=$g.traveled; $g.roseGap = RNext 26 46 }
+
+    # combo cools off; grab roses; reward clean dodges; age the floating popups
+    if ($g.comboT -gt 0) { $g.comboT--; if ($g.comboT -le 0) { $g.combo=0 } }
+    Collect-Roses $g
+    Near-Miss $g
+    for ($i=$g.pops.Count-1; $i -ge 0; $i--) { $p=$g.pops[$i]; $p.t--; $p.y-=0.5; if ($p.t -le 0) { $g.pops.RemoveAt($i) } }
+
+    # the game occasionally just declares VICTORY, earned or not
+    if ($g.victory -gt 0) { $g.victory-- }
+    elseif ($rng.Next(1000) -lt 6) { $g.victory=14; $g.victoryTag = Pick $VictoryTags; Sound victory }
 }
 
 function Hit? { param($g)
@@ -174,6 +225,13 @@ function Render { param($g)
             $cx = (($i*23 + 10) - [int]($t/4)) % ($W+10); if ($cx -lt 0) { $cx += ($W+10) }
             Draw-Sprite $b @('(~~~)') (2 + ($i % 3)) ($cx-5) $C.cloud } }
 
+    # night rain -- sparse diagonal streaks behind the action
+    if ($g.night) {
+        for ($k=0; $k -lt 12; $k++) {
+            $rx = (($k*97 + $g.frame*3) % $W)
+            $ry = (($k*53 + $g.frame*2) % ($SURFACE-1))
+            Put $b $rx $ry ([char]'/') $C.rain } }
+
     # distant hills (slow parallax) just above the play band
     for ($x=0; $x -lt $W; $x++) {
         $hgt = [int](2 * [Math]::Abs([Math]::Sin(($x + $t/4) * 0.18)))
@@ -194,9 +252,16 @@ function Render { param($g)
     # obstacles
     foreach ($o in $g.obs) { Draw-Sprite $b $o.art $o.top ([int][Math]::Round($o.x)) $(if ($o.kind -eq 'ground') { $C.gObs } else { $C.aObs }) }
 
+    # roses to collect (drama tokens)
+    foreach ($r in $g.roses) { Put $b ([int][Math]::Round($r.x)) $r.y ([char]'@') $C.rose }
+
     # player (+ speed streamers)
     if ($g.grounded -and $g.duck -le 0) { Put $b ($PX-2) ($SURFACE-1) ([char]'~') $C.tag; Put $b ($PX-1) $SURFACE ([char]'-') $C.tag }
     $ps = Player-Sprite $g; Draw-Sprite $b $ps.art $ps.top $PX $ps.col
+
+    # floating popups (+points / CLOSE!) on top of the action
+    foreach ($p in $g.pops) { $py=[int][Math]::Round($p.y)
+        for ($i=0; $i -lt $p.text.Length; $i++) { Put $b ($p.x+$i) $py $p.text[$i] $p.col } }
 
     # HUD
     $title = ' DRAMA DASH '
@@ -205,6 +270,8 @@ function Render { param($g)
     for ($i=0; $i -lt $dist.Length; $i++) { Put $b ($W-2-$dist.Length+$i) 0 $dist[$i] $C.hud }
     $hi = "HI {0}" -f ([Math]::Max($g.hi,[int]$g.score))
     for ($i=0; $i -lt $hi.Length; $i++) { Put $b (28+$i) 0 $hi[$i] $C.hud }
+    if ($g.combo -gt 0) { $cmb = "COMBO x{0}" -f (Mult $g)
+        for ($i=0; $i -lt $cmb.Length; $i++) { Put $b ($i+1) 1 $cmb[$i] $C.combo } }
 
     # overlays
     if ($g.screen -eq 'title') {
@@ -219,14 +286,19 @@ function Render { param($g)
             '     >> press SPACE to flee <<       ',
             '=================================') $C.title
     } elseif ($g.screen -eq 'dead') {
+        # there is no defeat screen. you won. the game is certain.
         Overlay $b @(
             '===================================',
-            '        T O   B E   C O N T I N U E D . . .',
+            '             V I C T O R Y',
             '',
-            ("   You fled {0}m from your past." -f [int]$g.score),
-            ("   Best escape: {0}m" -f [Math]::Max($g.hi,[int]$g.score)),
+            ("   {0}.  {1}m, naturally." -f $g.winBrag, [int]$g.score),
+            '   You won. There was never any doubt.',
             '',
-            '   R = run again      Q = quit') $C.dead }
+            '   R = run again      Q = quit') $C.title }
+
+    # ...and a VICTORY can punch in mid-run too, with the same total confidence
+    if ($g.screen -eq 'play' -and $g.victory -gt 0) {
+        Overlay $b @('', '*  V I C T O R Y  *', $g.victoryTag, '') $C.title }
 
     Build-Frame $b }
 
@@ -257,7 +329,8 @@ function Sound { param([string]$n) if ($script:Silent) { return }
         'duck'    { [Console]::Beep(330,40) }
         'thunder' { [Console]::Beep(70,120) }
         'crash'   { [Console]::Beep(180,120); [Console]::Beep(120,160); [Console]::Beep(90,260) }
-        'point'   { [Console]::Beep(880,30) } } } catch { } }
+        'point'   { [Console]::Beep(880,30) }
+        'victory' { [Console]::Beep(523,90); [Console]::Beep(659,90); [Console]::Beep(784,170) } } } catch { } }
 
 # ============================ STORYBOARD =====================================
 if ($Storyboard) {
@@ -269,14 +342,23 @@ if ($Storyboard) {
     $g.obs.Add(@{ x=20.0; art=$GROUND[0]; top=($SURFACE-1); w=3; kind='ground' })
     $g.obs.Add(@{ x=44.0; art=$AIR[0];    top=($SURFACE-3); w=3; kind='air' })
     Show '[ ACT ONE -- running; cake ahead, drone beyond ]' $g
+    # roses + combo multiplier
+    $g.roses.Add(@{ x=22.0; y=($SURFACE-1) }); $g.roses.Add(@{ x=38.0; y=($SURFACE-6) }); $g.roses.Add(@{ x=54.0; y=($SURFACE-1) })
+    $g.combo=3; $g.comboT=90; $g.pops.Add(@{ x=$PX; y=($SURFACE-3); t=10; text='+100'; col=$C.pop })
+    Show '[ ROSES & COMBO -- grab the @ for a multiplier ]' $g
+    # the absurd, supremely confident VICTORY, mid-run
+    $g.victory=14; $g.victoryTag='TOO EASY'
+    Show '[ VICTORY -- it just declares wins, with total confidence ]' $g
+    $g.victory=0
     # jumping the cake
-    $g.y=4.0; $g.grounded=$false; $g.obs[0].x=9.0; Show '[ THE LEAP -- clearing the wedding cake ]' $g
-    # ducking the drone
+    $g.y=4.0; $g.grounded=$false; $g.obs[0].x=9.0; Show '[ THE LEAP -- clearing the wedding cake (double-jump ready) ]' $g
+    # ducking the drone, in the rain
     $g.y=0.0; $g.grounded=$true; $g.duck=4; $g.obs.Clear(); $g.night=$true
-    $g.obs.Add(@{ x=9.0; art=$AIR[0]; top=($SURFACE-3); w=3; kind='air' }); $g.flash=2; $g.boltX=50
-    Show '[ THE DUCK -- under the paparazzi drone, lightning strikes ]' $g
-    # game over
-    $g2 = New-Game; $g2.screen='dead'; $g2.score=1280; $g2.night=$true; Show '[ CRASH -- TO BE CONTINUED ]' $g2
+    $g.obs.Add(@{ x=9.0; art=$AIR[0]; top=($SURFACE-3); w=3; kind='air'; nm=$false }); $g.flash=2; $g.boltX=50
+    Show '[ THE DUCK -- under the drone; lightning + night rain ]' $g
+    # game over -- which is to say, another decisive victory
+    $g2 = New-Game; $g2.screen='dead'; $g2.score=940; $g2.night=$true; $g2.winBrag='FLAWLESS'
+    Show '[ CRASH -- declared a VICTORY, naturally ]' $g2
     return
 }
 
@@ -325,12 +407,16 @@ try {
         switch ($g.screen) {
             'title' { if ($jump) { $g = New-Game; $g.screen='play' } }
             'play'  {
-                if ($jump -and $g.grounded) { $g.vy=$JUMP_V; $g.grounded=$false; Sound jump }
+                if ($jump) {
+                    if ($g.grounded)     { $g.vy=$JUMP_V;      $g.grounded=$false; $g.jumps=1; Sound jump }
+                    elseif ($g.jumps -lt 2) { $g.vy=$JUMP_V*0.9; $g.jumps=2;          Sound jump }   # double jump
+                }
                 if ($duck -and $g.grounded) { $g.duck=$DUCK_FRAMES; Sound duck }
                 Step-Game $g
                 $mid=[int]([int]$g.score/100); if ($mid -gt $lastMilestone) { $lastMilestone=$mid; Sound point }
                 if (Hit? $g) {
                     Sound crash
+                    $g.victory=0; $g.winBrag = Pick $VictoryTags; Sound victory   # the crash is, of course, a win
                     foreach ($o in 6,2,5,1,4,0) {                 # death shake
                         [Console]::SetCursorPosition($o,0); [Console]::Out.Write((Render $g)); Start-Sleep -Milliseconds 45 }
                     if ([int]$g.score -gt $g.hi) { $g.hi=[int]$g.score; Set-Hi $g.hi }
