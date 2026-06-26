@@ -17,6 +17,19 @@
     The harder the burn, the harder the room goes: a chuckle, then FLOORED,
     then the room is simply destroyed and a chair gets thrown.
 
+    ...EXCEPT WHEN IT DOESN'T.  Now and then -- regardless of how good the line
+    was -- the joke just BOMBS.  Total silence.  A lone cricket.  A tumbleweed
+    rolls clean across the broadcast.  One person coughs.  And the guy?  He does
+    not care.  At all.  REC keeps rolling, the stare never breaks, and he moves
+    on to the next one.  The not-caring is the whole bit.
+
+    ...AND ONCE IN A BLUE MOON, THE LEVEL DROPS BY.  Rarely the room is not just
+    empty -- the signal corrupts, the timecode rots, and a single enormous eye
+    opens in the dark.  There was never an audience.  THE LEVEL has been in row
+    zero the whole time, and it is not laughing.  The guy does not care.  Not
+    even about that.  It blinks, looks away, and he does the next one.
+    (A guest appearance from the dread that haunts Drama-TV.ps1.)
+
     Live mode redraws in place with sound + motion (needs a real console).
     -Storyboard prints a representative montage of frames to stdout instead.
 
@@ -26,6 +39,8 @@
 .PARAMETER Scenes      Storyboard: how many bits to lay out. Default 1.
 .PARAMETER Seed        Fix the RNG for reproducible output. 0 = random.
 .PARAMETER Fast        Type faster and shorten the dramatic holds. For the impatient.
+.PARAMETER Bomb        Every bit bombs. Crickets only. He still does not care.
+.PARAMETER Level       Summon THE LEVEL every bit. The eye. The dread. The shrug.
 
 .EXAMPLE
     .\Floored.ps1
@@ -33,6 +48,10 @@
     .\Floored.ps1 -Bits 5
 .EXAMPLE
     .\Floored.ps1 -Storyboard -Scenes 2 -Seed 42
+.EXAMPLE
+    .\Floored.ps1 -Bomb                 # nothing but crickets, all night
+.EXAMPLE
+    .\Floored.ps1 -Level                # THE LEVEL is the only one watching
 #>
 [CmdletBinding()]
 param(
@@ -41,7 +60,9 @@ param(
     [switch]$Storyboard,
     [int]$Scenes = 1,
     [int]$Seed   = 0,
-    [switch]$Fast
+    [switch]$Fast,
+    [switch]$Bomb,
+    [switch]$Level
 )
 
 # ============================ RNG ============================================
@@ -55,7 +76,14 @@ $script:Silent = [bool]$Silent
 $TypeMs = if ($Fast) { 9 }   else { 34 }    # ms per character of the punchline
 $Beat   = if ($Fast) { 320 } else { 850 }   # short pause
 $Hold   = if ($Fast) { 650 } else { 1500 }  # long deadpan hold
-$SW     = 56                                 # interior width of the broadcast
+$BW     = 56                                 # interior width of the broadcast
+$BombChance  = 0.16                          # odds any given bit just... bombs
+$LevelChance = 0.06                          # odds THE LEVEL drops by instead
+
+# Who THE LEVEL addresses when it bleeds through -- the realest name it can find.
+$Viewer = 'YOU'
+try { $u = (([Environment]::UserName) -replace '[^A-Za-z0-9 ]','').Trim().ToUpper(); if ($u) { $Viewer = $u } } catch {}
+$GlitchGlyph = '#%&@*+=:<>/\|~^".'.ToCharArray()
 
 # ============================ Helpers ========================================
 function Center { param([string]$s,[int]$w)
@@ -66,6 +94,11 @@ function PadR { param([string]$s,[int]$w)
 function Pause { param([int]$ms) Start-Sleep -Milliseconds $ms }
 function Tc { param([System.Diagnostics.Stopwatch]$sw)
     $t=$sw.Elapsed; '{0:00}:{1:00}:{2:00}' -f $t.Hours,$t.Minutes,$t.Seconds }
+function Rot { param([string]$t,[double]$p)             # bit-rot: corrupt a line of picture
+    if ($p -le 0) { return $t }
+    $a=$t.ToCharArray()
+    for ($i=0;$i -lt $a.Length;$i++){ if ($a[$i] -ne ' ' -and $rng.NextDouble() -lt $p){ $a[$i]=$GlitchGlyph[$rng.Next($GlitchGlyph.Count)] } }
+    -join $a }
 
 # ============================ Sound ==========================================
 function Beep { param([int]$f,[int]$ms) if (-not $script:Silent) { try { [Console]::Beep($f,$ms) } catch {} } }
@@ -75,7 +108,11 @@ function Sting { param([string]$n) switch ($n) {
     'laugh'    { 1..6 | ForEach-Object { Beep (RNext 300 520) 50 } }            # the room cracks
     'applause' { 1..14 | ForEach-Object { Beep (RNext 900 2400) 18 } }          # the wave hits
     'floored'  { Beep 523 120; Beep 659 120; Beep 784 360 }                     # the payoff fanfare
-    'chair'    { Beep 90 200; Beep 70 320 } } }                                 # a chair gets thrown
+    'chair'    { Beep 90 200; Beep 70 320 }                                     # a chair gets thrown
+    'cricket'  { 1..2 | ForEach-Object { Beep 2600 30; Beep 2300 30 } }         # ...nothing
+    'cough'    { Beep 140 110 }                                                 # one lone cough
+    'glitch'   { 1..3 | ForEach-Object { Beep (RNext 1200 2600) 16 } }          # the signal corrupts
+    'level'    { 1..4 | ForEach-Object { Beep (RNext 40 70) 90 }; Beep 44 700 } } }   # sub-bass dread
 
 # ============================ Word banks =====================================
 # Curated deadpan bits -- a setup line and a punch, each tagged with a burn
@@ -120,7 +157,35 @@ $BitPool = @(
   @{ Setup='I keep a gratitude list.';
      Punch='It is just the WiFi password and one good nap.'; Burn=2 },
   @{ Setup='They told me to bring my whole self to work.';
-     Punch='HR has since revised that policy.'; Burn=3 }
+     Punch='HR has since revised that policy.'; Burn=3 },
+  @{ Setup='I tried to find myself.';
+     Punch='I was not there either.'; Burn=3 },
+  @{ Setup='My smartwatch told me to stand.';
+     Punch='So I stood. It has not had another idea since.'; Burn=2 },
+  @{ Setup='I went back to school.';
+     Punch='To get a jacket. I left it there in 2009.'; Burn=2 },
+  @{ Setup='They say dress for the job you want.';
+     Punch='Security keeps escorting me out of the cockpit.'; Burn=3 },
+  @{ Setup='My credit score went up.';
+     Punch='My standards came down to meet it.'; Burn=2 },
+  @{ Setup='I started saying no to things.';
+     Punch='Mostly alarms. Mostly mornings.'; Burn=1 },
+  @{ Setup='I told them I am a people person.';
+     Punch='The people have not corroborated this.'; Burn=3 },
+  @{ Setup='I joined a gym in January.';
+     Punch='They send a card every year. They miss me. I do not miss back.'; Burn=2 },
+  @{ Setup='I have a morning routine now.';
+     Punch='Step one is being shocked it is morning.'; Burn=2 },
+  @{ Setup='I cleaned out my inbox.';
+     Punch='Declared email bankruptcy. The creditors were all me.'; Burn=2 },
+  @{ Setup='My doctor said I should reduce stress.';
+     Punch='So I stopped opening the mail. Bold new chapter.'; Burn=2 },
+  @{ Setup='I am big on self-care now.';
+     Punch='I let every call go to voicemail. All of them. Forever.'; Burn=2 },
+  @{ Setup='I asked for a raise.';
+     Punch='They raised the bar instead. I cannot reach it.'; Burn=3 },
+  @{ Setup='People say I light up a room.';
+     Punch='I leave. The flicking is the light switch.'; Burn=1 }
 )
 function New-Bit { Pick $BitPool }
 
@@ -173,6 +238,36 @@ $FlooredBanner = @(
   '|  _| | |_| |_| | |_| |  _ <| |___| |_| |',
   '|_|   |_____\___/ \___/|_| \_\_____|____/' )
 
+# The anti-payoff: the silence that arrives when the joke does not land.
+$NothingBanner = @(
+  ' _  _  ___ _____ _  _ ___ _  _  ___ ',
+  '| \| |/ _ \_   _| || |_ _| \| |/ __|',
+  '| .` | (_) | | | | __ || || .` | (_ |',
+  '|_|\_|\___/  |_| |_||_|___|_|\_|\___|' )
+# A tumbleweed, mid-tumble. Alternating frames so it looks like it is rolling.
+$Weed = @('(@)','<@>','{@}','<@>')
+
+# THE LEVEL's cameo: a single enormous eye that opens in the empty room. The
+# pupil glitches to '@' when it fixes on you. (Crossover from Drama-TV.ps1.)
+$LevelEye = @(
+  '      . - - - - - - - - .      ',
+  '    /                     \    ',
+  '   |     _____________     |   ',
+  '   |    /             \    |   ',
+  '   |   |     _____     |   |   ',
+  '   |   |    /     \    |   |   ',
+  '   |   |   |   O   |   |   |   ',
+  '   |   |    \_____/    |   |   ',
+  '   |    \_____________/    |   ',
+  '    \                     /    ',
+  '      . - - - - - - - - .      ' )
+# What it whispers -- deadpan-themed, with a deep-cut nod to the mundane bleed.
+$LevelWhispers = @('THE LEVEL IS NOT LAUGHING','THERE WAS NEVER AN AUDIENCE',
+  'YOU WERE NEVER THE COMEDIAN','I HAVE BEEN IN ROW ZERO THE WHOLE TIME',
+  'THE APPLAUSE WAS ALWAYS ME','THIS WAS NEVER OPEN MIC NIGHT',
+  'THE REC LIGHT WAS NEVER FOR YOU','I AM THE ONLY ONE STILL WATCHING, {VIEWER}',
+  'NOBODY IS LAUGHING, {VIEWER}','COUPON POUPON ON ... THE LEVEL')
+
 # ============================ Crowd ==========================================
 # A procedurally-thrown crowd: more arms up + more dropped jaws the higher
 # the burn. Rendered as three rows of little people.
@@ -198,12 +293,12 @@ function Draw { param([string[]]$Picture,[string]$Tag,[bool]$RecOn,[string]$Time
                       [ConsoleColor]$Color='Yellow',[int]$Shake=0)
     Clear-Host
     $ind = '  ' + (' '*$Shake)
-    $bar = '=' * $SW
+    $bar = '=' * $BW
     Write-Host ($ind+'.'+$bar+'.') -ForegroundColor DarkGray
     $rec  = if ($RecOn) { '(o REC)' } else { '(  REC)' }
     $left = ' '+$rec+'  '+$Tag
     $time = $Time+' '
-    $hdr  = (PadR $left ($SW-$time.Length))+$time
+    $hdr  = (PadR $left ($BW-$time.Length))+$time
     Write-Host ($ind+'|') -NoNewline -ForegroundColor DarkGray
     $idx = if ($RecOn) { $hdr.IndexOf('o') } else { -1 }
     if ($idx -ge 0) {
@@ -212,10 +307,10 @@ function Draw { param([string[]]$Picture,[string]$Tag,[bool]$RecOn,[string]$Time
         Write-Host $hdr.Substring($idx+1)  -NoNewline -ForegroundColor Gray
     } else { Write-Host $hdr -NoNewline -ForegroundColor Gray }
     Write-Host '|' -ForegroundColor DarkGray
-    Write-Host ($ind+'|'+('-'*$SW)+'|') -ForegroundColor DarkGray
+    Write-Host ($ind+'|'+('-'*$BW)+'|') -ForegroundColor DarkGray
     foreach ($line in $Picture) {
         Write-Host ($ind+'|') -NoNewline -ForegroundColor DarkGray
-        Write-Host (Center $line $SW) -NoNewline -ForegroundColor $Color
+        Write-Host (Center $line $BW) -NoNewline -ForegroundColor $Color
         Write-Host '|' -ForegroundColor DarkGray
     }
     Write-Host ($ind+"'"+$bar+"'") -ForegroundColor DarkGray }
@@ -223,7 +318,7 @@ function Draw { param([string[]]$Picture,[string]$Tag,[bool]$RecOn,[string]$Time
 # Lower-third caption. Name instant, quote optionally typed out.
 function Lower { param([string]$Tag,[string]$Quote,[ConsoleColor]$QColor='White',[bool]$Slow=$false)
     Write-Host ''
-    Write-Host ('   '+('_'*($SW-1))) -ForegroundColor DarkGray
+    Write-Host ('   '+('_'*($BW-1))) -ForegroundColor DarkGray
     Write-Host '  >> ' -NoNewline -ForegroundColor DarkCyan
     Write-Host $Tag    -ForegroundColor Cyan
     Write-Host '  >> ' -NoNewline -ForegroundColor DarkCyan
@@ -231,7 +326,7 @@ function Lower { param([string]$Tag,[string]$Quote,[ConsoleColor]$QColor='White'
         foreach ($c in $Quote.ToCharArray()) { Write-Host -NoNewline $c -ForegroundColor $QColor; Pause $TypeMs }
         Write-Host ''
     } else { Write-Host $Quote -ForegroundColor $QColor }
-    Write-Host ('   '+('~'*($SW-1))) -ForegroundColor DarkGray }
+    Write-Host ('   '+('~'*($BW-1))) -ForegroundColor DarkGray }
 
 # ============================ Beats ==========================================
 function Show-TitleCard {
@@ -256,6 +351,12 @@ function Blink-Rec { param([string[]]$Pic,[string]$Tag,[System.Diagnostics.Stopw
 
 # The room going up: applause meter fills, crowd thrown, banner, screen-shake.
 function Invoke-Floored { param([int]$burn,[System.Diagnostics.Stopwatch]$Sw)
+    # on the killer lines, let it hang a half-second longer -- then it erupts
+    if ($burn -ge 3 -and $rng.NextDouble() -lt 0.5) {
+        Draw -Picture $Lens -Tag 'B-ROLL' -RecOn $true -Time (Tc $Sw)
+        Write-Host ''; Write-Host '  >> ' -NoNewline -ForegroundColor DarkCyan
+        Write-Host '[ . . . wait for it . . . ]' -ForegroundColor DarkGray
+        Pause ([int]($Hold*0.7)) }
     # the wave of sound
     Sting laugh; Pause 120
     if ($burn -ge 2) { Sting applause }
@@ -280,6 +381,59 @@ function Invoke-Floored { param([int]$burn,[System.Diagnostics.Stopwatch]$Sw)
     if ($burn -ge 3) { Sting chair }
     Pause $Hold }
 
+# The other outcome: it bombs. A cricket, a tumbleweed, one cough, and a guy
+# who could not possibly care less. REC never stops rolling.
+function Invoke-Bombed { param([System.Diagnostics.Stopwatch]$Sw)
+    $captions = @('[ . . . ]','somewhere, a single cricket','one person coughs, immediately regrets it',
+                  'a chair creaks, apologetically','[ nothing. nothing at all. ]')
+    Sting cricket; Pause 250
+    # the tumbleweed rolls clean across the empty room
+    for ($x=0; $x -le ($BW-3); $x += 5) {
+        $weedLine = (' '*$x) + (Pick $Weed)
+        $pic = @('','','',$weedLine,'','   '+(Pick $captions))
+        Draw -Picture $pic -Tag 'AUDIENCE REACTION' -RecOn $true -Time (Tc $Sw) -Color DarkGray
+        if ($x % 10 -eq 0) { Sting cricket } else { Sting cough }
+        Pause 120 }
+    Pause 250
+    # cut back to the guy. unchanged. unbothered. still recording.
+    Draw -Picture $Lens -Tag 'B-ROLL' -RecOn $true -Time (Tc $Sw) -Color Yellow
+    Write-Host ''; Write-Host '  >> ' -NoNewline -ForegroundColor DarkCyan
+    Write-Host '[ he does not care. at all. ]' -ForegroundColor DarkGray
+    Pause $Hold
+    # the anti-card: NOTHING, in funereal grey. no fanfare. that is the joke.
+    foreach ($k in 1..2) {
+        Draw -Picture (@('') + $NothingBanner + @('','      * crickets. respectfully. *')) `
+             -Tag 'AUDIENCE: ...' -RecOn $true -Time (Tc $Sw) -Color DarkGray
+        Pause 110 }
+    Pause $Hold }
+
+# The cameo: there was never an audience. THE LEVEL has been watching all along.
+# The signal corrupts, an eye opens in the dark, it whispers... and he shrugs.
+function Invoke-Level { param([System.Diagnostics.Stopwatch]$Sw)
+    $whisper = (Pick $LevelWhispers).Replace('{VIEWER}',$Viewer)
+    # 1. the picture decays into the dark as the eye resolves
+    foreach ($f in 1..3) {
+        $pic = @('') + ($LevelEye | ForEach-Object { Rot $_ (0.12*$f) }) + @('')
+        Draw -Picture $pic -Tag (Rot 'AUDIENCE REACTION' (0.18*$f)) -RecOn $true `
+             -Time (Rot (Tc $Sw) (0.25*$f)) -Color DarkRed -Shake (RNext 0 3)
+        Sting glitch; Pause 140 }
+    # 2. the eye holds; the whisper bleeds through the lower-third, typed in red
+    Draw -Picture (@('') + $LevelEye + @('')) -Tag 'S I G N A L' -RecOn $true -Time (Rot (Tc $Sw) 0.4) -Color Red
+    Write-Host ''; Write-Host '  >> ' -NoNewline -ForegroundColor DarkRed
+    foreach ($c in $whisper.ToCharArray()) { Write-Host -NoNewline $c -ForegroundColor Red; Pause $TypeMs }
+    Write-Host ''
+    Sting level; Pause $Hold
+    # 3. cut back to the guy. he does not care. not even about that.
+    Draw -Picture $Lens -Tag 'B-ROLL' -RecOn $true -Time (Tc $Sw) -Color Yellow
+    Write-Host ''; Write-Host '  >> ' -NoNewline -ForegroundColor DarkCyan
+    Write-Host '[ he does not care. not even about that. ]' -ForegroundColor DarkGray
+    Pause $Hold
+    # 4. it blinks, looks away, and the broadcast returns to normal
+    foreach ($k in 1..2) {
+        Draw -Picture (1..11 | ForEach-Object { '#'*$BW }) -Tag 'S I G N A L' -RecOn $false -Time '' -Color DarkGray
+        Pause 70 }
+    Pause 200 }
+
 # One full bit, start to finish.
 function Invoke-Bit { param($bit,[System.Diagnostics.Stopwatch]$Sw)
     # 1. OPEN ON THE GUY
@@ -298,8 +452,12 @@ function Invoke-Bit { param($bit,[System.Diagnostics.Stopwatch]$Sw)
         Write-Host '  >> ' -NoNewline -ForegroundColor DarkCyan
         Write-Host ('[ '+('.'*$s)+' dead silence '+('.'*$s)+' ]') -ForegroundColor DarkGray
         Pause ([int]($Hold*0.55)) }
-    # 5. FLOORED
-    Invoke-Floored -burn $bit.Burn -Sw $Sw }
+    # 5. THE OUTCOME -- floored, crickets, or (rarest) THE LEVEL. He won't flinch.
+    if     ($Level)                              { Invoke-Level  -Sw $Sw }
+    elseif ($Bomb)                               { Invoke-Bombed -Sw $Sw }
+    elseif ($rng.NextDouble() -lt $LevelChance)  { Invoke-Level  -Sw $Sw }
+    elseif ($rng.NextDouble() -lt $BombChance)   { Invoke-Bombed -Sw $Sw }
+    else                                         { Invoke-Floored -burn $bit.Burn -Sw $Sw } }
 
 function Show-SignOff { param([System.Diagnostics.Stopwatch]$Sw)
     Draw -Picture @(
@@ -322,7 +480,7 @@ if ($Storyboard) {
         $bit = New-Bit
         "##### BIT $e  (burn $($bit.Burn)/3) #####"; ''
         '  [ OPEN ON THE GUY ]'
-        ($Guy | ForEach-Object { '   |'+(Center $_ $SW)+'|' }) -join "`n"; ''
+        ($Guy | ForEach-Object { '   |'+(Center $_ $BW)+'|' }) -join "`n"; ''
         '  [ THE SETUP ]'
         '   >> HIM'
         '   >> '+$bit.Setup; ''
@@ -331,9 +489,18 @@ if ($Storyboard) {
         '   >> '+$bit.Punch; ''
         '  [ . . . dead silence . . . ]'; ''
         '  [ FLOORED ]'
-        (New-Crowd $bit.Burn | ForEach-Object { '   |'+(Center $_ $SW)+'|' }) -join "`n"
+        (New-Crowd $bit.Burn | ForEach-Object { '   |'+(Center $_ $BW)+'|' }) -join "`n"
         ($FlooredBanner | ForEach-Object { '   '+$_ }) -join "`n"
         '        '+(Pick $Reactions[$bit.Burn]); ''
+        '  [ ALTERNATE ENDING -- now and then, it just BOMBS ]'
+        ('   |'+(Center ((' '*((RNext 0 ($BW-3))))+(Pick $Weed)) $BW)+'|')
+        ($NothingBanner | ForEach-Object { '   '+$_ }) -join "`n"
+        '        * crickets. respectfully. *'
+        '        [ he does not care. at all. ]'; ''
+        '  [ RAREST CAMEO -- THE LEVEL is the only one watching ]'
+        ($LevelEye | ForEach-Object { '   |'+(Center $_ $BW)+'|' }) -join "`n"
+        '        >> '+(Pick $LevelWhispers).Replace('{VIEWER}',$Viewer)
+        '        [ he does not care. not even about that. ]'; ''
         if ($e -lt $Scenes) { '  . : .  *click* next bit  . : .'; '' }
     }
     return
