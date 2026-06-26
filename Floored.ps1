@@ -55,7 +55,7 @@ $script:Silent = [bool]$Silent
 $TypeMs = if ($Fast) { 9 }   else { 34 }    # ms per character of the punchline
 $Beat   = if ($Fast) { 320 } else { 850 }   # short pause
 $Hold   = if ($Fast) { 650 } else { 1500 }  # long deadpan hold
-$SW     = 56                                 # interior width of the broadcast
+$BW     = 56                                 # interior width of the broadcast
 
 # ============================ Helpers ========================================
 function Center { param([string]$s,[int]$w)
@@ -198,12 +198,12 @@ function Draw { param([string[]]$Picture,[string]$Tag,[bool]$RecOn,[string]$Time
                       [ConsoleColor]$Color='Yellow',[int]$Shake=0)
     Clear-Host
     $ind = '  ' + (' '*$Shake)
-    $bar = '=' * $SW
+    $bar = '=' * $BW
     Write-Host ($ind+'.'+$bar+'.') -ForegroundColor DarkGray
     $rec  = if ($RecOn) { '(o REC)' } else { '(  REC)' }
     $left = ' '+$rec+'  '+$Tag
     $time = $Time+' '
-    $hdr  = (PadR $left ($SW-$time.Length))+$time
+    $hdr  = (PadR $left ($BW-$time.Length))+$time
     Write-Host ($ind+'|') -NoNewline -ForegroundColor DarkGray
     $idx = if ($RecOn) { $hdr.IndexOf('o') } else { -1 }
     if ($idx -ge 0) {
@@ -212,10 +212,10 @@ function Draw { param([string[]]$Picture,[string]$Tag,[bool]$RecOn,[string]$Time
         Write-Host $hdr.Substring($idx+1)  -NoNewline -ForegroundColor Gray
     } else { Write-Host $hdr -NoNewline -ForegroundColor Gray }
     Write-Host '|' -ForegroundColor DarkGray
-    Write-Host ($ind+'|'+('-'*$SW)+'|') -ForegroundColor DarkGray
+    Write-Host ($ind+'|'+('-'*$BW)+'|') -ForegroundColor DarkGray
     foreach ($line in $Picture) {
         Write-Host ($ind+'|') -NoNewline -ForegroundColor DarkGray
-        Write-Host (Center $line $SW) -NoNewline -ForegroundColor $Color
+        Write-Host (Center $line $BW) -NoNewline -ForegroundColor $Color
         Write-Host '|' -ForegroundColor DarkGray
     }
     Write-Host ($ind+"'"+$bar+"'") -ForegroundColor DarkGray }
@@ -223,7 +223,7 @@ function Draw { param([string[]]$Picture,[string]$Tag,[bool]$RecOn,[string]$Time
 # Lower-third caption. Name instant, quote optionally typed out.
 function Lower { param([string]$Tag,[string]$Quote,[ConsoleColor]$QColor='White',[bool]$Slow=$false)
     Write-Host ''
-    Write-Host ('   '+('_'*($SW-1))) -ForegroundColor DarkGray
+    Write-Host ('   '+('_'*($BW-1))) -ForegroundColor DarkGray
     Write-Host '  >> ' -NoNewline -ForegroundColor DarkCyan
     Write-Host $Tag    -ForegroundColor Cyan
     Write-Host '  >> ' -NoNewline -ForegroundColor DarkCyan
@@ -231,7 +231,7 @@ function Lower { param([string]$Tag,[string]$Quote,[ConsoleColor]$QColor='White'
         foreach ($c in $Quote.ToCharArray()) { Write-Host -NoNewline $c -ForegroundColor $QColor; Pause $TypeMs }
         Write-Host ''
     } else { Write-Host $Quote -ForegroundColor $QColor }
-    Write-Host ('   '+('~'*($SW-1))) -ForegroundColor DarkGray }
+    Write-Host ('   '+('~'*($BW-1))) -ForegroundColor DarkGray }
 
 # ============================ Beats ==========================================
 function Show-TitleCard {
@@ -322,7 +322,7 @@ if ($Storyboard) {
         $bit = New-Bit
         "##### BIT $e  (burn $($bit.Burn)/3) #####"; ''
         '  [ OPEN ON THE GUY ]'
-        ($Guy | ForEach-Object { '   |'+(Center $_ $SW)+'|' }) -join "`n"; ''
+        ($Guy | ForEach-Object { '   |'+(Center $_ $BW)+'|' }) -join "`n"; ''
         '  [ THE SETUP ]'
         '   >> HIM'
         '   >> '+$bit.Setup; ''
@@ -331,7 +331,7 @@ if ($Storyboard) {
         '   >> '+$bit.Punch; ''
         '  [ . . . dead silence . . . ]'; ''
         '  [ FLOORED ]'
-        (New-Crowd $bit.Burn | ForEach-Object { '   |'+(Center $_ $SW)+'|' }) -join "`n"
+        (New-Crowd $bit.Burn | ForEach-Object { '   |'+(Center $_ $BW)+'|' }) -join "`n"
         ($FlooredBanner | ForEach-Object { '   '+$_ }) -join "`n"
         '        '+(Pick $Reactions[$bit.Burn]); ''
         if ($e -lt $Scenes) { '  . : .  *click* next bit  . : .'; '' }
