@@ -484,9 +484,19 @@ $Whispers = @{   # what the broadcast says, by how aware it has become (tier <- 
         'THE ACTORS KNOW YOUR NAME','THERE IS NO CHANNEL {N}','TURN AROUND, {VIEWER}')
   3 = @('CHANGE THE CHANNEL. NOW.','IT IS IN THE ROOM WITH YOU','YOU WERE NEVER THE VIEWER',
         'THE LEVEL IS LOOKING BACK','{VIEWER}, WE HAVE BEEN WAITING','DO NOT LET IT FINISH') }
+# The mundane bleed: rare, dread-independent. Now and then the signal simply
+# forgets to be terrifying and asks about mustard instead. Funnier for it.
+$Mundane = @('COUPON POUPON ON ... THE LEVEL','PARDON ME -- DO YOU HAVE ANY GREY POUPON',
+             'DO NOT ADJUST YOUR CONDIMENTS','YOUR EXTENDED WARRANTY HAS EXPIRED, {VIEWER}',
+             'REMEMBER TO HYDRATE','HAVE YOU CONSIDERED A SIDE SALAD','BUY ONE GET ONE ... FOREVER',
+             'PLEASE RATE YOUR HAUNTING FIVE STARS','DON''T FORGET TO VALIDATE YOUR PARKING',
+             'THE LEVEL THINKS YOU LOOK NICE TODAY','RESTOCK: MILK, BREAD, SOULS')
 function Get-Whisper {
-    $tier = if ($script:Dread -ge 0.66) { 3 } elseif ($script:Dread -ge 0.33) { 2 } else { 1 }
     $chN  = if ($script:ch) { '{0:00}' -f $script:ch } else { '13' }
+    # ~7% of the time, a daft mundane line slips through regardless of dread tier
+    if ($rng.NextDouble() -lt 0.07) {
+        return (Pick $Mundane).Replace('{VIEWER}',$Viewer).Replace('{N}',$chN) }
+    $tier = if ($script:Dread -ge 0.66) { 3 } elseif ($script:Dread -ge 0.33) { 2 } else { 1 }
     (Pick $Whispers[$tier]).Replace('{VIEWER}',$Viewer).Replace('{N}',$chN) }
 function Rot { param([string]$t,[double]$p)              # bit-rot: decay a line of picture
     if ($p -le 0) { return $t }
