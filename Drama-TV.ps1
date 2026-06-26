@@ -3,13 +3,19 @@
     A procedurally-generated ASCII television that channel-surfs through
     overwrought, cinematic prime-time dramas -- letterboxed shots, a scrolling
     BREAKING NEWS chyron, lightning + thunder, screen-shake, a dolly-zoom REVEAL
-    with a musical sting, and TO BE CONTINUED cliffhangers.
+    with a musical sting, TO BE CONTINUED cliffhangers, and a LIVE STUDIO
+    AUDIENCE that gasps, leaps to its feet, and gets FLOORED.
 
 .DESCRIPTION
     Each "channel" is directed as a tiny episode:
       PREVIOUSLY ON ...  ->  stormy dialogue (rain, chyron, thunder/flash/shake)
       ->  THE REVEAL (dolly-zoom onto a giant emoting face + "dun dun DUUUN")
       ->  TO BE CONTINUED ...  (fade to black)  ->  channel static  -> next show.
+
+    THE AUDIENCE IS LIVE.  A studio crowd sits below the set with an APPL-O-METER
+    that swings in real time -- the room HUSHES to dead silence in the heartbeat
+    before a reveal, then the REVEAL physically SLAMS it: the meter pins, the
+    heads are knocked flat, the crowd is FLOORED.  Dynamics: quiet, swell, SLAM.
 
     Live mode redraws in place with sound + motion (needs a real console).
     -Storyboard prints a representative montage of frames to stdout instead.
@@ -21,13 +27,19 @@
     indicator lamps -- starts to glitch.  Past a threshold THE LEVEL looks
     directly at you by name... then blinks, looks away, and the dread subsides.
 
-.PARAMETER Channels   How many episodes before exiting. 0 (default) = forever.
-.PARAMETER Silent     Disable the [Console]::Beep sound cues.
-.PARAMETER Storyboard Print a static montage to stdout (no animation / sound).
-.PARAMETER Scenes     Storyboard: how many episodes to lay out. Default 1.
-.PARAMETER Seed       Fix the RNG for reproducible output. 0 = random.
-.PARAMETER Calm       The broadcast behaves: no dread, decay, glitches or haunt.
-.PARAMETER StartDread Begin already unsettled. 0.0 (default) .. 1.0 (possessed).
+    AND YOU WERE NEVER THE DUCK.  Floor the crowd enough times and the bit drops
+    its last mask: every seat in the house turns, as one, to face you -- and
+    every seat is a duck.  One fills the screen, deadpan, into the camera.
+    "YOU WERE NEVER THE DUCK, {VIEWER}."  ...QUACK.  Then it passes.
+
+.PARAMETER Channels    How many episodes before exiting. 0 (default) = forever.
+.PARAMETER Silent      Disable the [Console]::Beep sound cues.
+.PARAMETER Storyboard  Print a static montage to stdout (no animation / sound).
+.PARAMETER Scenes      Storyboard: how many episodes to lay out. Default 1.
+.PARAMETER Seed        Fix the RNG for reproducible output. 0 = random.
+.PARAMETER Calm        The broadcast behaves: no dread, decay, glitches, haunt or duck.
+.PARAMETER StartDread  Begin already unsettled. 0.0 (default) .. 1.0 (possessed).
+.PARAMETER Duck        Skip the wait -- the next REVEAL drops the duck on you.
 
 .EXAMPLE
     .\Drama-TV.ps1
@@ -37,6 +49,8 @@
     .\Drama-TV.ps1 -Storyboard -Scenes 1 -Seed 42
 .EXAMPLE
     .\Drama-TV.ps1 -StartDread 0.9          # straight to the haunting
+.EXAMPLE
+    .\Drama-TV.ps1 -Duck                    # you were never the duck
 #>
 [CmdletBinding()]
 param(
@@ -46,7 +60,8 @@ param(
     [int]$Scenes   = 1,
     [int]$Seed     = 0,
     [switch]$Calm,
-    [double]$StartDread = 0
+    [double]$StartDread = 0,
+    [switch]$Duck
 )
 
 # ============================ RNG ============================================
@@ -276,6 +291,28 @@ function Get-ZoomShot { param($show,[string]$size,[string]$caption)
     $rows+=Blank; $rows+=(LB)
     Fit $rows }
 
+# The duck, front-on, staring deadpan down the lens of the camera at YOU.
+$DuckCam = @(@'
+     .-~~~~~~~~-.
+    /  ^      ^  \
+   |  (o)    (o)  |
+   |      __      |
+   |    .'  '.    |
+    \   ( <==> )   /
+     \   '.__.'  /
+      '-.______.-'
+'@ -split "\r?\n" | Where-Object { $_ -ne '' })
+function Get-DuckScreen { param([string]$caption)
+    $inner=$SH-3
+    $lead=[Math]::Max(0,[int](($inner-$DuckCam.Count)/2))
+    $rows=@(LB)
+    1..$lead | ForEach-Object { $rows+=Blank }
+    foreach ($ln in $DuckCam) { $rows+=Cell (Center $ln $SW) 'Yellow' }
+    while ($rows.Count -lt ($SH-3)) { $rows+=Blank }
+    $rows+=Cell (Center ('* '+$caption.ToUpper()+' *') $SW) 'DarkYellow'
+    $rows+=Blank; $rows+=(LB)
+    Fit $rows }
+
 function Get-CardShot { param([string]$l1,[string]$l2,[string]$color)
     $rows=@(LB)
     1..4 | ForEach-Object { $rows+=Blank }
@@ -298,6 +335,64 @@ function Get-StaticShot { param([string]$ch)
 function Dim { param($cells,[int]$step)               # fade a card toward black
     $map=@{0='White';1='Gray';2='DarkGray';3='Black'}
     @($cells | ForEach-Object { Cell $_.Text $map[$step] }) }
+
+# ============================ The live studio audience =======================
+# A real crowd sits below the set. $Reaction (0..1) is the energy in the room;
+# it is bumped by beats (React) and decays every frame, so the meter SWINGS --
+# hushing to nothing before a reveal, then pinned when the REVEAL slams it.
+# $SlamFrames holds the crowd FLOORED for a few frames after a slam; $Floored
+# counts how many times the room has been levelled (the duck waits on it).
+$AUDN = 9                                              # seats in the front row
+$script:Reaction   = 0.0
+$script:SlamFrames = 0
+$script:Floored    = 0
+$script:AllDucks   = $false
+$script:ForceDuck  = $false
+function React { param([double]$to,[string]$sting='')          # work the crowd up
+    if ($to -gt $script:Reaction) { $script:Reaction = [Math]::Min(1.0,$to) }
+    if ($sting -and $script:Live) { Sting $sting } }
+function Get-Mood {
+    if ($script:SlamFrames -gt 3) { return 'slam' }
+    if ($script:SlamFrames -gt 0) { return 'floor' }
+    $r=$script:Reaction
+    if ($r -ge 0.82) { 'feet' } elseif ($r -ge 0.60) { 'clap' }
+    elseif ($r -ge 0.40) { 'gasp' } elseif ($r -ge 0.18) { 'murmur' } else { 'hush' } }
+function Get-AudienceRow {
+    $mood = Get-Mood
+    $d    = if ($script:Calm) { 0 } else { $script:Dread }
+    $base = @{ hush='(o)'; murmur='(o)'; gasp='(O)'; clap='\o/'; feet='\O/'; floor=' x)'; slam='___' }[$mood]
+    $seats=@()
+    for ($i=0;$i -lt $AUDN;$i++) {
+        $s=$base
+        switch ($mood) {
+            'murmur' { if ($rng.Next(100) -lt 25) { $s='(o,' } }
+            'gasp'   { if ($rng.Next(100) -lt 30) { $s='(@)' } }
+            'clap'   { if ($rng.Next(100) -lt 40) { $s=Pick @('\o/','/o\','\O/') } }
+            'feet'   { if ($rng.Next(100) -lt 45) { $s=Pick @('\O/','\o/','|O|') } }
+            'floor'  { $s=Pick @(' x)','(x ','\_ ',' _/','o_o','._.') }
+            'slam'   { $s=Pick @('___','_x_',' . ','_ _',' ._') }
+        }
+        # the duck creeps into the crowd as the dread climbs -- foreshadowing
+        if ($script:AllDucks) { $s = Pick @('<O>','<o>','<O>') }
+        elseif (-not $script:Calm -and $d -gt 0.4 -and $rng.NextDouble() -lt ($d*0.22)) { $s = Pick @('<o>','<O>','q.p') }
+        $seats += $s }
+    $col = if ($script:AllDucks) { 'Yellow' }
+           else { @{ hush='DarkGray'; murmur='Gray'; gasp='White'; clap='Yellow'; feet='Yellow'; floor='Red'; slam='Red' }[$mood] }
+    if (-not $script:AllDucks -and $d -gt 0.5 -and (($seats -join '') -match '<')) { $col='DarkYellow' }
+    Cell (Center (($seats -join '  ')) $TW) $col }
+function Get-MeterRow {
+    $mood=Get-Mood; $r=[Math]::Max(0.0,[Math]::Min(1.0,$script:Reaction))
+    $w=14; $fill=[int][Math]::Round($r*$w)
+    $bar=([string][char]0x2588*$fill)+([string][char]0x2591*($w-$fill))
+    $desc=@{ hush='. . . hushed . . .'; murmur='a murmur ripples'; gasp='the room GASPS';
+             clap='APPLAUSE!'; feet='ON ITS FEET!'; floor='*** F L O O R E D ***'; slam='*** S L A M M E D ***' }[$mood]
+    if ($script:AllDucks) { $desc='QUACK.' }
+    $txt = "APPL-O-METER [$bar] $desc"
+    $col = if ($script:AllDucks) { 'Yellow' }
+           elseif ($mood -in 'floor','slam') { 'Red' }
+           elseif ($r -ge 0.7) { Pick @('Red','Yellow') }
+           elseif ($r -ge 0.4) { 'Yellow' } elseif ($r -ge 0.18) { 'White' } else { 'DarkGray' }
+    Cell (Center $txt $TW) $col }
 
 # ============================ TV chrome ======================================
 function Build-Tv { param($cells,[string]$ch,[bool]$static)
@@ -326,6 +421,11 @@ function Build-Tv { param($cells,[string]$ch,[bool]$static)
     Row ("'"+('-'*($TW-2))+"'") $body
     Row (Center '||                                        ||' $TW) $body
     Row (Center '[==]                                    [==]' $TW) $body
+    # --- the live studio audience, seated below the set, watching with you ---
+    $aud = if ($script:AllDucks) { 'L I V E   S T U D I O   F L O C K' } else { 'L I V E   S T U D I O   A U D I E N C E' }
+    Row (Center $aud $TW) 'DarkGray'
+    $out.Add((Get-AudienceRow))
+    $out.Add((Get-MeterRow))
     ,$out }
 
 # ============================ Sound + live renderers =========================
@@ -337,7 +437,13 @@ function Sting { param([string]$n) switch ($n) {
     'cliffhanger'{ Beep 392 220; Beep 330 220; Beep 247 650 }
     'organ'      { Beep 262 120; Beep 330 120; Beep 392 220 }
     'glitch'     { 1..3 | ForEach-Object { Beep (RNext 1100 2600) 16 } }          # data-corruption chirp
-    'dread'      { 1..5 | ForEach-Object { Beep (RNext 38 62) 90 }; Beep 41 900 } } }   # sub-bass drone
+    'dread'      { 1..5 | ForEach-Object { Beep (RNext 38 62) 90 }; Beep 41 900 }      # sub-bass drone
+    'swell'      { foreach ($f in 196,247,294,370,440) { Beep $f 80 } }            # the room leans in
+    'gasp'       { Beep 622 70; Beep 831 80; Beep 1047 150 }                       # a sharp intake
+    'applause'   { 1..12 | ForEach-Object { Beep (RNext 200 720) 18 } }            # scattered clapping
+    'ovation'    { 1..22 | ForEach-Object { Beep (RNext 220 920) 15 }; Beep 740 220 }   # the house erupts
+    'slam'       { Beep 150 60; Beep 95 200; Beep 60 320 }                         # WHUMP -- floored
+    'quack'      { 1..4 | ForEach-Object { Beep (RNext 300 380) 110; Beep (RNext 150 210) 80 } } } }   # the duck speaks
 
 # ============================ The level is aware of you ======================
 # A dread meter climbs the longer you watch. As it rises the broadcast decays:
@@ -348,7 +454,27 @@ $script:Calm  = [bool]$Calm
 $script:Live  = $false
 $script:Force = $false
 $script:Dread = [Math]::Min(1.0, [Math]::Max(0.0, $StartDread))
-$Viewer = if ($env:USERNAME) { ($env:USERNAME -replace '[^A-Za-z0-9]','').ToUpper() } else { 'VIEWER' }
+# THE BROADCAST WILL NOT BE FOBBED OFF WITH A LOGIN NAME.  It reaches into the
+# machine and digs up the realest name it can find -- your actual, human name,
+# the one on the account -- and that is the name it says, deadpan, into the lens.
+function Format-ViewerName { param([string]$raw)
+    if (-not $raw) { return '' }
+    $n = ($raw -split '[\\/@]')[-1]                 # drop DOMAIN\ and @realm cruft
+    $n = ($n -replace '[^A-Za-z0-9 ]',' ' -replace '\s+',' ').Trim()
+    if ($n) { $n.ToUpper() } else { '' } }
+function Find-Viewer {
+    # 1. your friendly display name ("James Morse"), if the OS will give it up
+    try {
+        Add-Type -AssemblyName System.DirectoryServices.AccountManagement -ErrorAction Stop
+        $dn = Format-ViewerName ([System.DirectoryServices.AccountManagement.UserPrincipal]::Current.DisplayName)
+        if ($dn) { return $dn }
+    } catch {}
+    # 2. the Windows identity behind the session (DOMAIN\you)
+    try { $n = Format-ViewerName ([System.Security.Principal.WindowsIdentity]::GetCurrent().Name); if ($n) { return $n } } catch {}
+    # 3. the .NET account name
+    try { $n = Format-ViewerName ([Environment]::UserName); if ($n) { return $n } } catch {}
+    'VIEWER' }
+$Viewer = Find-Viewer
 if (-not $Viewer) { $Viewer = 'VIEWER' }
 $GlitchGlyph = '#%&@*+=:<>/\|~^".'.ToCharArray()
 $Whispers = @{   # what the broadcast says, by how aware it has become (tier <- dread)
@@ -391,6 +517,8 @@ function Show-Raw { param($cells,[string]$ch,[bool]$static,[int]$indent=3)      
     foreach ($l in $tv) { Write-Host ((' '*$indent)+$l.Text) -ForegroundColor $l.Color } }
 function Show-Live { param($cells,[string]$ch,[bool]$static,[int]$indent=3)
     if (-not $script:Calm) { $script:Dread = [Math]::Min(1.0, $script:Dread + 0.0045) }   # watching costs you
+    if ($script:SlamFrames -gt 0) { $script:SlamFrames--; $script:Reaction = 1.0 }        # held flat on the floor
+    else { $script:Reaction = [Math]::Max(0.0, $script:Reaction * 0.90 - 0.012) }         # the room settles
     Show-Raw (Add-Glitch $cells) $ch $static $indent }
 function Show-Plain { param($cells,[string]$ch,[bool]$static)
     (Build-Tv (Add-Glitch $cells) $ch $static) | ForEach-Object { $_.Text } }
@@ -422,33 +550,78 @@ function Invoke-Haunt {
     $script:Dread = 0.2 }                               # the dread subsides... for now
 function Maybe-Haunt { if (-not $script:Calm -and $script:Dread -ge 0.85) { Invoke-Haunt; return $true }; return $false }
 
+# THE SLAM -- a reveal lands so hard it levels the room. The meter pins, the
+# heads are knocked flat, the crowd is FLOORED... and a little more unsettled.
+function Invoke-Slam { param($cells,[string]$ch)
+    $script:Reaction = 1.0; $script:SlamFrames = 7; $script:Floored++
+    if (-not $script:Calm) { $script:Dread = [Math]::Min(1.0, $script:Dread + 0.07) }   # being floored stays with you
+    Sting slam
+    Invoke-Shake $cells $ch                         # the whole set rocks as the crowd goes down
+    Sting ovation }
+
+# THE PAYOFF, part two -- floor the crowd enough and the bit drops its last
+# mask: every seat in the house is a duck, and it has been watching YOU.
+function Invoke-Duck {
+    $cs='{0:00}' -f $script:ch
+    $black=@(1..$SH | ForEach-Object { Cell (' '*$SW) 'Black' })
+    # the room falls dead silent and turns, as one, to face you
+    $script:Reaction=0.0; $script:SlamFrames=0
+    Sting swell
+    foreach ($s in 0..3) { Show-Raw (Dim (Get-CardShot 'THE STUDIO AUDIENCE' 'turns, as one, to face you' 'White') $s) $cs $false; Start-Sleep -Milliseconds 130; if (Test-Quit) { throw 'quit' } }
+    # every seat is a duck now -- the pit fills with bills
+    $script:AllDucks=$true
+    $rows=@($black); $rows[6]=Cell (Center 'every seat is a duck.' $SW) 'DarkYellow'
+    Show-Raw $rows $cs $false; Sting quack; Start-Sleep -Milliseconds 800; if (Test-Quit) { throw 'quit' }
+    # one of them fills the screen, deadpan, down the lens
+    Show-Raw (Get-DuckScreen 'why are you still watching') $cs $false; Beep 300 120; Start-Sleep -Milliseconds 750; if (Test-Quit) { throw 'quit' }
+    # it types the line, one character at a time, in the dark
+    $line=(Pick @('YOU WERE NEVER THE DUCK, {V}.','YOU WERE ALWAYS THE DUCK, {V}.',
+                  'WE ARE ALL THE DUCK NOW, {V}.','THE DUCK WAS INSIDE YOU, {V}.')).Replace('{V}',$Viewer)
+    $shown=''
+    foreach ($c in $line.ToCharArray()) {
+        $shown += $c
+        $rows=@($black); $rows[7]=Cell (Center $shown $SW) 'Yellow'
+        Show-Raw $rows $cs $false; Beep (RNext 300 520) 28; Start-Sleep -Milliseconds 55
+        if (Test-Quit) { throw 'quit' } }
+    Start-Sleep -Milliseconds 900
+    Sting quack; Invoke-Flash $cs                   # it blinks
+    $rows=@($black); $rows[7]=Cell (Center 'Q U A C K .' $SW) 'DarkYellow'
+    Show-Raw $rows $cs $false; Beep 120 600; Start-Sleep -Milliseconds 1200
+    # ...and it passes. the crowd are people again, and on their feet.
+    $script:AllDucks=$false; $script:Dread=0.2; $script:Floored=0; $script:Reaction=1.0; $script:SlamFrames=3 }
+function Maybe-Duck { if (-not $script:Calm -and ($script:ForceDuck -or $script:Floored -ge 3)) { Invoke-Duck; $script:ForceDuck=$false; return $true }; return $false }
+
 # ============================ The director ===================================
 function Invoke-Episode { param($show)
     # 1. PREVIOUSLY ON
+    React 0.30 swell                                   # the house lights dim, the room leans in
     Show-Live (Get-CardShot 'PREVIOUSLY,  ON . . .' $show.Title.ToUpper() 'White') ('{0:00}' -f $script:ch) $false
     Sting organ; Start-Sleep -Milliseconds 1100; if (Test-Quit) { throw 'quit' }
     # 2. Establishing dialogue (with a storm hitting mid-scene)
     $n = [Math]::Min($show.Beats.Count, 2)
     for ($i=0; $i -lt $n; $i++) {
         $beat=$show.Beats[$i]; $stormy = ($rng.Next(100) -lt 60)
+        if ($beat.Kind -eq 'line') { React 0.45 gasp } else { React 0.55 applause }   # the room reacts to the beat
         $chy=0
         foreach ($f in 1..10) {
             Show-Live (Get-DialogueShot $show $beat $stormy $chy) ('{0:00}' -f $script:ch) $false
             $chy += 2
-            if ($stormy -and $f -eq 5) { Invoke-Flash ('{0:00}' -f $script:ch); Sting thunder; Invoke-Shake (Get-DialogueShot $show $beat $stormy $chy) ('{0:00}' -f $script:ch) }
+            if ($stormy -and $f -eq 5) { React 0.7 gasp; Invoke-Flash ('{0:00}' -f $script:ch); Sting thunder; Invoke-Shake (Get-DialogueShot $show $beat $stormy $chy) ('{0:00}' -f $script:ch) }
             Start-Sleep -Milliseconds 130; if (Test-Quit) { throw 'quit' }
         }
         if (Maybe-Haunt) { return }                    # if it surfaces here, the episode never finishes
     }
-    # 3. THE REVEAL  -- heartbeat builds, dolly-zoom snaps onto the face, sting + flash + shake
-    foreach ($h in 1..3) { Sting heartbeat; Start-Sleep -Milliseconds 260 }
-    Show-Live (Get-ZoomShot $show 'small' 'the truth is...') ('{0:00}' -f $script:ch) $false; Beep 330 120; Start-Sleep -Milliseconds 360
+    # 3. THE REVEAL  -- the room HUSHES, heartbeat builds, then the truth SLAMS them flat
+    $script:Reaction = 0.06                             # dead silence -- you could hear a pin drop
+    foreach ($h in 1..3) { Sting heartbeat; Show-Live (Get-ZoomShot $show 'small' 'the truth is...') ('{0:00}' -f $script:ch) $false; Start-Sleep -Milliseconds 260 }
     Show-Live (Get-ZoomShot $show 'big'   $show.Reveal)      ('{0:00}' -f $script:ch) $false
     Invoke-Flash ('{0:00}' -f $script:ch); Sting reveal
-    Invoke-Shake (Get-ZoomShot $show 'big' $show.Reveal) ('{0:00}' -f $script:ch)
+    Invoke-Slam (Get-ZoomShot $show 'big' $show.Reveal) ('{0:00}' -f $script:ch)         # *** the crowd is FLOORED ***
     Show-Live (Get-ZoomShot $show 'big' $show.Reveal) ('{0:00}' -f $script:ch) $false; Start-Sleep -Milliseconds 800
     if (Test-Quit) { throw 'quit' }
-    # 4. TO BE CONTINUED -> fade to black
+    if (Maybe-Duck) { return }                          # ...and if the room has been levelled too often: the duck
+    # 4. TO BE CONTINUED -> fade to black (over a roaring ovation that slowly tapers)
+    React 0.95 ovation
     $card = Get-CardShot 'TO BE CONTINUED . . .' ("next week on $($show.Title)") 'White'
     Show-Live $card ('{0:00}' -f $script:ch) $false; Sting cliffhanger; Start-Sleep -Milliseconds 600
     foreach ($s in 0..3) { Show-Live (Dim $card $s) ('{0:00}' -f $script:ch) $false; Start-Sleep -Milliseconds 230 }
@@ -467,27 +640,39 @@ if ($Storyboard) {
         $show = New-Show; $script:ch = $ch; $cs='{0:00}' -f $ch
         "##### EPISODE $e : $($show.Title) #####"; ''
         $script:Dread = if ($Calm) { 0 } else { 0.05 }
-        '  [ COLD OPEN -- PREVIOUSLY ON ]'
+        $script:Reaction = 0.30; $script:SlamFrames = 0; $script:AllDucks = $false
+        '  [ COLD OPEN -- PREVIOUSLY ON  (the house leans in) ]'
         Show-Plain (Get-CardShot 'PREVIOUSLY,  ON . . .' $show.Title.ToUpper() 'White') $cs $false; ''
         $script:Dread = if ($Calm) { 0 } else { 0.42 }
-        '  [ ACT ONE -- dread rising: bit-rot begins to creep into the picture ]'
+        $script:Reaction = 0.55
+        '  [ ACT ONE -- dread creeping into the picture; the crowd GASPS ]'
         Show-Plain (Get-DialogueShot $show $show.Beats[0] $true 0) $cs $false; ''
+        $script:Reaction = 0.06
+        '  [ THE HUSH -- dead silence; you could hear a pin drop ]'
+        Show-Plain (Get-ZoomShot $show 'small' 'the truth is...') $cs $false; ''
         '  [ *** LIGHTNING + THUNDER + SCREEN SHAKE *** ]'
         Show-Plain (Get-FlashShot) $cs $false; ''
         $script:Dread = if ($Calm) { 0 } else { 0.72 }
-        '  [ THE REVEAL -- the signal decays, the set''s own chrome glitches ]'
+        $script:SlamFrames = 7; $script:Reaction = 1.0   # the reveal has just SLAMMED the room flat
+        '  [ THE REVEAL -- the truth lands; the audience is *** FLOORED *** ]'
         Show-Plain (Get-ZoomShot $show 'big' $show.Reveal) $cs $false; ''
+        $script:SlamFrames = 0
         if ($Calm) {
-            '  [ CLIFFHANGER -- fade to black ]'
+            $script:Reaction = 0.95
+            '  [ CLIFFHANGER -- fade to black, over a standing ovation ]'
             Show-Plain (Get-CardShot 'TO BE CONTINUED . . .' ("next week on $($show.Title)") 'White') $cs $false; ''
         } else {
-            $script:Dread = 0.97; $script:Force = $true
+            $script:Dread = 0.97; $script:Force = $true; $script:Reaction = 0.9
             '  [ *** THE BROADCAST NOTICES YOU *** ]'
             Show-Plain (Get-CardShot 'TO BE CONTINUED . . .' ("next week on $($show.Title)") 'White') $cs $false
             $script:Force = $false; ''
+            '  [ *** AND YOU WERE NEVER THE DUCK -- every seat turns to face you *** ]'
+            $script:AllDucks = $true; $script:Reaction = 0.0; $script:Dread = 0.2   # the duck stares back, crisp
+            Show-Plain (Get-DuckScreen 'you were never the duck') $cs $false
+            $script:AllDucks = $false; ''
         }
         if ($e -lt $Scenes) { $ch += RNext 1 4; if ($ch -gt 99){$ch=RNext 2 10}
-            $script:ch = $ch; $script:Dread = if ($Calm) { 0 } else { 0.3 }
+            $script:ch = $ch; $script:Dread = if ($Calm) { 0 } else { 0.3 }; $script:Reaction = 0.3
             '  . : .  *kkrrshhh* changing channel  . : .'
             Show-Plain (Get-StaticShot ('{0:00}' -f $ch)) ('{0:00}' -f $ch) $true; '' }
     }
@@ -500,6 +685,7 @@ try { [void][Console]::WindowWidth } catch {
 $prevCursor = [Console]::CursorVisible
 try { [Console]::CursorVisible=$false } catch {}
 $script:ch = RNext 2 10; $surfed = 0; $script:Live = $true
+$script:ForceDuck = [bool]$Duck                         # -Duck: drop the duck on the very next reveal
 function Test-Quit { try { if ([Console]::KeyAvailable){[void][Console]::ReadKey($true);return $true} } catch {}; return $false }
 
 try {
