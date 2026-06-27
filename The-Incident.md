@@ -18,8 +18,9 @@ The beats:
 3. **THE ACCUSATION** — *RU JEALOSE THAT I'M NERVOSE?*
 4. **THE NERVES** — the witness sweats; the NERVOSE-O-METER climbs
 5. **THE CASCADE** — *ANOTHER INCIDENT. ANOTHER ONE.* the counter spikes
+5b. **PROFOUND WONDERS** — the demand (*IF THER IS NOT ANOTHER, I AM GOING TO BE SO, FUCKING, PISSED*), then *THERE WAS ANOTHER*; automobiles driving by swiftly; a woman spills water on her lap and exits; the prosperity gospel (*YOU CAN'T SAY THAT OR U DON'T GET RICH, HALLELUJAH*); a SMASH CUT to **THE LEVEL** (clevore… >_>); a word from our sponsor (the truth, in **SPRINJ BOOT**, for **$5**); *THAT IS ABSOLUTELY CORRECT* + a sad jazz trombone; and the Monopole game, with the CUWPS, at MCDONOLDS
 6. **THE REVEAL** — the nature of the incident (still NEBALOSE) — FLOORED
-7. **THER WIL BE CONSEQUINCES** — the stamp comes down (you are a person of interest)
+7. **THER WIL BE CONSEQUINCES** — the stamp comes down (you are a person of interest); *IM NOT UR SAVOR — u half too feign for urself*
 8. **PENDING INVESTIGATION** — fade to static
 
 ```powershell
