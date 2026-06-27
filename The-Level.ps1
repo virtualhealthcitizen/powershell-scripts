@@ -19,6 +19,8 @@
       ->  the host poses the board (a single LEVEL box, label on the lid)
       ->  the contestant ANSWERS -- safe answers bank applause, the room rises
       ->  THE TEMPTATION: the prize doubles if they nest it just once more...
+      ->  THE PROFESSIONAL: a man stands, arms protruding, crossed profusely,
+          and asks the only question that matters -- HOW DENSE IS YOUR CONTEXT.
       ->  THEY PUT THE LEVEL BACK IN THE LEVEL  ->  RECURSION: nested boxes
           zoom inward to the vanishing point, a falling-pitch siren
       ->  FLOORED, FLOORED -- a double slam; the crowd is levelled, then
@@ -122,6 +124,11 @@ $Tempters = @('Double it, {P}! Just nest it ONE more time!','The prize TRIPLES i
               'For the SUPER JACKPOT, {P} -- put THE LEVEL... back in THE LEVEL?')
 $Breaks   = @('{P} puts THE LEVEL back in THE LEVEL.','{P} does it. {P} puts THE LEVEL in THE LEVEL.',
               'And -- oh no -- {P} nests THE LEVEL inside ITSELF.','{P} couldn''t resist. THE LEVEL goes in THE LEVEL.')
+# THE PROFESSIONAL -- a man, arms protruding, crossed profusely. He has ONE question.
+$ProfLines= @('HOW DENSE IS YOUR CONTEXT.','HOW DENSE -- IS YOUR CONTEXT.','ANSWER THE MAN, {P}. HOW DENSE.',
+              'A PROFESSIONAL ASKS: HOW DENSE IS YOUR CONTEXT.','THE LEVEL IS IN THE LEVEL. SO IS YOUR CONTEXT.',
+              'NOT NESTED. DENSE. THERE IS A DIFFERENCE, {V}.','HE PROTRUDES. HE CROSSES. HE WAITS.',
+              'YOUR CONTEXT, {V}. ON A SCALE OF NEBALOSE TO FLOORED.')
 
 # ============================ The LEVEL board (nested boxes) ==================
 # A single box with " THE LEVEL " on the lid; nest it and the boxes plunge to a
@@ -200,6 +207,22 @@ function Get-CardShot { param([string]$l1,[string]$l2,[string]$color)
     $rows+=Cell (Center $l1 $SW) $color
     $rows+=Cell (Center $l2 $SW) 'DarkGray'
     $rows+=Cell (Center ('='*34) $SW) 'DarkGray'
+    Fit $rows }
+
+# THE PROFESSIONAL -- he stands before you. arms protruding, crossed profusely.
+function Get-ProfessionalShot { param([string]$line)
+    $man=@('        (-_-)        ',
+           '       /|   |\       ',
+           '      < +===+ >      ',   # arms, protruding, crossed profusely
+           '        |   |        ',
+           '       _|   |_       ')
+    $rows=@(LB)
+    $rows+=Cell (Center 'A  P R O F E S S I O N A L' $SW) 'DarkGray'
+    foreach ($l in $man) { $rows+=Cell (Center $l $SW) 'Gray' }
+    $w=Wrap2 ('"'+$line+'"') $SW
+    $rows+=Cell $w[0] 'White'
+    $rows+=Cell $w[1] 'White'
+    $rows+=(LB)
     Fit $rows }
 
 function Get-RuleShot { param([string]$rule,[bool]$on)
@@ -307,7 +330,8 @@ function Sting { param([string]$n) switch ($n) {
     'ovation'   { 1..20 | ForEach-Object { Beep (RNext 220 920) 15 }; Beep 740 220 }
     'gasp'      { Beep 622 70; Beep 831 80; Beep 1047 150 }
     'thunder'   { 1..3 | ForEach-Object { Beep (RNext 55 95) 110 } }
-    'dread'     { 1..5 | ForEach-Object { Beep (RNext 38 62) 90 }; Beep 41 900 } } }
+    'dread'     { 1..5 | ForEach-Object { Beep (RNext 38 62) 90 }; Beep 41 900 }
+    'profess'   { Beep 220 150; Beep 220 150; Beep 175 380 } } }   # arms, crossed, profusely
 
 # ============================ THE LEVEL looks back ===========================
 $script:Dread = 0.0
@@ -427,6 +451,11 @@ function Invoke-Round { param($round)
     # the hush
     $script:Reaction=0.06
     foreach ($h in 1..3) { Beep 80 90; Show-Live (Get-LevelShot 1 'don''t do it...' 'DarkYellow') $cs $false; Hold 260 }
+    # 4b. THE PROFESSIONAL -- a man stands before you. arms protruding, crossed profusely.
+    $pl=(Pick $ProfLines).Replace('{P}',$round.Player).Replace('{V}',$Viewer)
+    $script:Reaction=0.02
+    Show-Live (Get-ProfessionalShot $pl) $cs $false; Sting profess; Hold 1200
+    if (Test-Quit) { throw 'quit' }
     # 5. THEY DO IT
     $brk=(Pick $Breaks).Replace('{P}',$round.Player)
     Show-Live (Get-StageShot $round $brk '(O_O)' $true) $cs $false; Sting buzzer; Invoke-Flash $cs; Sting thunder; Hold 400
@@ -462,6 +491,8 @@ if ($Storyboard) {
         $script:Reaction=0.06
         '  [ THE TEMPTATION -- dead silence; do not do it... ]'
         Show-Plain (Get-StageShot $round (($Tempters[0]).Replace('{P}',$round.Player)) '(o_O)' $true) $cs $false; ''
+        '  [ THE PROFESSIONAL -- arms crossed, profusely: HOW DENSE IS YOUR CONTEXT ]'
+        Show-Plain (Get-ProfessionalShot 'HOW DENSE IS YOUR CONTEXT.') $cs $false; ''
         '  [ *** THEY PUT THE LEVEL BACK IN THE LEVEL *** ]'
         Show-Plain (Get-FlashShot) $cs $false; ''
         '  [ RECURSION -- THE LEVEL in THE LEVEL in THE LEVEL... ]'

@@ -7,8 +7,10 @@ that blinks in red between every round:
 > **UNDER NO CIRCUMSTANCES PUT THE LEVEL BACK IN THE LEVEL.**
 
 They bank a few safe answers (the crowd claps, then rises), the host dangles a
-double-or-nothing jackpot... and then, inevitably, they put THE LEVEL back in
-THE LEVEL. The board folds into itself -- THE LEVEL inside THE LEVEL inside THE
+double-or-nothing jackpot... and then a man steps from the wings — **A
+PROFESSIONAL**, arms protruding, crossed profusely — to ask the only question
+that matters: **HOW DENSE IS YOUR CONTEXT.** And then, inevitably, they put THE
+LEVEL back in THE LEVEL. The board folds into itself -- THE LEVEL inside THE LEVEL inside THE
 LEVEL, boxes within boxes to the vanishing point -- and the room is not just
 FLOORED. It is **FLOORED, FLOORED**: a double slam. Floor the house enough times
 and THE LEVEL stops pretending it was ever a show, and looks back at you by name.
