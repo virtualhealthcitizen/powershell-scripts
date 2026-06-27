@@ -114,6 +114,11 @@ $Reveals = @('every church was the same church, {W}.','you founded the church th
              'the congregation of no one is standing-room only, {W}.','you were the schism, {W}. you were always the schism.')
 $Sabbatical = @('and then he left. for two months. for no reason.','the founder takes a two-month sabbatical. it is foretold.',
                 'gone. two months. the marquee just says "BRB".','he imagined a holiday, and so it came to pass.')
+# THE FRONT-PEW MATRIARCH. She catches the spirit and will NOT be quiet about it.
+$LadyNames = @('MABEL','EUNICE','GLADYS','AGNES','DORIS','EDNA','BERNICE','PEARL','DOT','MAUDE')
+# Non-holy hollers, mixed in for variety; the signature HOOOLY cry stretches with the spirit.
+$LadyCries = @('LAWWWD HAVE MERCY!','SWEET MERCIFUL HEAVENS!','MY STARS AND GARTERS!','PRAISE BE-EEE!',
+               'OH MY WORD, OH MY WORD!','HALLE-LU-U-UJAH!','WELL I NEVER, I NEVER DID!','TAKE ME NOW, LAWD!')
 # The recursive prophecy -- the centrepiece. It eats its own tail.
 $Prophecy = @(
     'I imagine what will happen.',
@@ -147,6 +152,19 @@ function Get-SignLines { param([string]$name)
       (' | '+(Center $w[1] 24)+' | '),
       " '--------------------------' ")
 }
+# The matriarch, on her feet in the front pew, hands flung to the rafters.
+function Get-LadyArt {
+    @('        _         ',
+      '       (_)        ',     # her good church hat
+      '   \   (O o)   /  ',     # hands up, eyes to heaven
+      '    \ / )_( \ /   ',
+      '     V  | |  V    ',
+      '       _/ \_      ')
+}
+# The signature cry. The O's stretch with the intensity of the spirit (1..n).
+function Get-Holy { param([int]$i=1)
+    $o = 'O' * [Math]::Max(2, 1+$i)
+    Pick @("OH H${o}LY H${o}LY H${o}LY!","OH H${o}LY, H${o}LY, H${o}LY!","H${o}LY! H${o}LY! H${o}LY!") }
 
 # ============================ Shot builders ==================================
 function Get-CardShot { param([string]$l1,[string]$l2,[string]$color)
@@ -171,7 +189,7 @@ function Get-FoundingShot { param([string]$name,[string]$caption)
 # The sermon: preacher at the pulpit, congregation below, a threat lower-third.
 function Get-SermonShot { param($svc,[string]$line,[int]$chy,[bool]$glow)
     $face = Pick @('(O_O)','(>_<)','(o_o)','(^o^)','(0_0)')
-    $pews = '  n   n   n   n   n   n  '       # bowed heads in the pews
+    $pews = '  n   n  \o/  n   n   n  '       # bowed heads -- and one matriarch, hands UP
     $art = Get-PulpitArt $face
     $rows=@(
         (LB),
@@ -184,6 +202,17 @@ function Get-SermonShot { param($svc,[string]$line,[int]$chy,[bool]$glow)
     $rows+=Cell $w[0] 'White'
     $rows+=Cell $w[1] 'White'
     $rows+=Cell (' '+(ChyronWindow $svc.Chyron $chy ($SW-2))+' ') 'Red'
+    $rows+=(LB)
+    Fit $rows }
+
+# The matriarch catches the spirit -- a cutaway to her, mid-holler.
+function Get-LadyShot { param([string]$name,[string]$cry)
+    $rows=@(LB)
+    $rows+=Cell (Center "$name CATCHES THE SPIRIT" $SW) 'Yellow'
+    foreach ($l in (Get-LadyArt)) { $rows+=Cell (Center $l $SW) 'Magenta' }
+    $w=Wrap2 ('"'+$cry+'"') $SW
+    $rows+=Cell $w[0] 'White'
+    $rows+=Cell $w[1] 'White'
     $rows+=(LB)
     Fit $rows }
 
@@ -293,6 +322,8 @@ function Sting { param([string]$n) switch ($n) {
     'organ'     { foreach ($f in 262,330,392,523) { Beep $f 160 } }        # the church organ
     'bell'      { Beep 880 200; Beep 660 300 }                             # a tolling bell
     'amen'      { foreach ($f in 392,440,523) { Beep $f 120 }; Beep 392 300 }
+    'holy'      { Beep 784 110; Beep 880 150; Beep 988 200; Beep 880 260 }   # OH HOOOLY HOOOLY HOOLY
+    'holymax'   { foreach ($f in 784,880,988,1047,1175) { Beep $f 120 }; Beep 1319 360 }
     'schism'    { foreach ($f in 523,494,440,392,349) { Beep $f 90 } }     # a chord splitting apart
     'reveal'    { Beep 466 150; Beep 466 150; Beep 392 550 }
     'slam'      { Beep 150 60; Beep 95 200; Beep 60 320 }
@@ -334,6 +365,7 @@ function New-Service {
     [pscustomobject]@{
         Title="THE CHURCH OF $FoundingChurch"; Preacher="$title $a"; Founder=$a
         FoundingName=$FoundingChurch; Rivals=$rivals; SchismLines=$schismLines
+        Lady=(Pick $LadyNames)
         Reveal=((Pick $Reveals).Replace('{W}',$a)); Sabbatical=(Pick $Sabbatical)
         Chyron=("BREAKING: $title $a HAS HAD ENOUGH   ***   THAT DOES IT   ***   FOUR FRIENDS, FOUR NEW CHURCHES   ***   DO NOT IMAGINE THAT   ***   ").ToUpper() } }
 
@@ -345,14 +377,18 @@ function Invoke-Service { param($svc)
     # 2. THE FOUNDING -- the church is named, verbatim
     React 0.5 doors
     foreach ($f in 1..4) { Show-Live (Get-FoundingShot $svc.FoundingName 'the doors open. the marquee blazes.') $false; if ($f -eq 1){Sting doors}; Hold 380; if (Test-Quit){throw 'quit'} }
-    # 3. THE FIRST SERMON (with a HALLELUJAH glow mid-scene)
+    # 3. THE FIRST SERMON (with a HALLELUJAH glow mid-scene -- and the matriarch)
     $chy=0
     foreach ($f in 1..10) {
         $line = if ($f -le 5) { 'You had BETTER not imagine that. Or ELSE.' } else { 'I will imagine what will happen -- AFTER you have imagined!' }
         $glow = ($f % 4 -eq 0)
         Show-Live (Get-SermonShot $svc $line $chy $glow) $false; $chy+=2
         if ($glow) { React 0.6 amen } elseif ($f -eq 1) { Sting bell }
-        Hold 150; if (Test-Quit){throw 'quit'} }
+        Hold 150; if (Test-Quit){throw 'quit'}
+        # the spirit takes old {Lady} -- she leaps up, hollering, the O's growing
+        if ($f -in 3,7) {
+            React 0.72; $cry = if ($rng.Next(100) -lt 70) { Get-Holy ([int]($f/3)+1) } else { Pick $LadyCries }
+            Show-Live (Get-LadyShot $svc.Lady $cry) $false; Sting holy; Hold 650; if (Test-Quit){throw 'quit'} } }
     # 4. THE SCHISM -- friends storm off to found rival churches
     React 0.55 schism
     $built=@()
@@ -366,10 +402,11 @@ function Invoke-Service { param($svc)
         Show-Live (Get-ProphecyShot $d $glow) $false
         Beep ([Math]::Max(120, 740-$d*80)) 40
         Hold ([Math]::Max(70, 360-$d*36)); if (Test-Quit){throw 'quit'} }
-    # 6. THE REVEAL -> FLOORED
+    # 6. THE REVEAL -> FLOORED -> the matriarch ASCENDS (maximum HOOOLY)
     Show-Live (Get-RevealShot $svc.Reveal) $false; Invoke-Flash; Sting reveal; Hold 500
     Invoke-Slam (Get-RevealShot $svc.Reveal)
     Show-Live (Get-RevealShot $svc.Reveal) $false; Hold 900; if (Test-Quit){throw 'quit'}
+    React 1.0; Show-Live (Get-LadyShot $svc.Lady (Get-Holy 6)) $false; Sting holymax; Hold 1100; if (Test-Quit){throw 'quit'}
     if ($script:Calm) {
         React 0.95 ovation
         Show-Live (Get-CardShot 'AND THEY RECONCILED' 'all churches merged. one nice imagining.' 'Green') $false; Sting amen; Hold 1200
@@ -397,8 +434,10 @@ if ($Storyboard) {
         '  [ THE FOUNDING -- the church is named, verbatim ]'
         Show-Plain (Get-FoundingShot $svc.FoundingName 'the doors open. the marquee blazes.') $false; ''
         $script:Reaction=0.55
-        '  [ THE FIRST SERMON -- the threat from the pulpit ]'
+        '  [ THE FIRST SERMON -- the threat from the pulpit (front-pew matriarch, hands UP) ]'
         Show-Plain (Get-SermonShot $svc 'You had BETTER not imagine that. Or ELSE.' 0 $true) $false; ''
+        ('  [ THE FAITHFUL -- old '+$svc.Lady+' catches the spirit ]')
+        Show-Plain (Get-LadyShot $svc.Lady (Get-Holy 4)) $false; ''
         '  [ THE SCHISM -- friends storm off to found rival churches ]'
         Show-Plain (Get-SchismShot $svc.Rivals $svc.SchismLines[0]) $false; ''
         $script:Reaction=0.1

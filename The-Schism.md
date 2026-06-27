@@ -17,6 +17,11 @@ will have been imagined — until it eats its own tail:
 **THE REVEAL**: every church was the same church. The congregation is **FLOORED**.
 And the founder takes two months off. For no reason. *It is foretold.*
 
+Throughout, the front-pew matriarch (Mabel, Eunice, Gladys…) keeps catching the
+spirit and will NOT be quiet about it — leaping up, hands to the rafters,
+hollering **"OH HOOOLY HOOOLY HOOLY!"** with the O's stretching longer the more
+the spirit takes her. At the reveal, she ascends.
+
 The beats:
 
 1. **THAT DOES IT** — a founder has had enough
