@@ -108,6 +108,21 @@ $Reveals  = @('the nature of the incident is, and remains, NEBALOSE, {W}.','it w
               'the incident was being NERVOSE about the incident, {W}.','you were the incident all along, {W}.')
 $Conseq   = @('THER WIL BE CONSEQUINCES.','CONSEQUINCES: PENDING.','CONSEQUINCES (NEBALOSE) TO FOLLOW.',
               'THER WIL BE CONSEQUINCES. ANOTHER ONE.','CONSEQUINCES WIL BE NERVOSE.')
+# --- PROFOUND WONDERS (bonus surreal interstitials; the spellings stay deliberate) ---
+$Wonders  = @('(automobiles driving by swiftly)','a woman spills water on her lap and exits',
+              '(a distant car alarm, never addressed)','a man nods slowly, knowing nothing',
+              '(automobiles -- still -- driving by, swiftly)','someone''s pomeranian wanders across the set',
+              'a woman returns, spills water AGAN, exits AGAN','(*jazz trombone messing with u*)')
+$Demand2  = @('IF THER IS NOT ANOTHER, I AM GOING TO BE SO, FUCKING, PISSED.','THER HAD BETTER BE ANOTHER.',
+              'GIVE ME ANOTHER OR I SWEAR ON THE INCIDINT --')
+$Prosper  = @('YOU CAN''T SAY THAT! OR U DON''T GET RICH, HALLELUJAH!','SAY IT RIGHT OR THE BLESSINGS DRY UP, HALLELUJAH!',
+              'RICHES, HALLELUJAH -- BUT ONLY IF U DON''T SAY THAT!')
+$Insults  = @('you''re such a LOW-TEMPERATURE KNOW-YOUR-HISTORY PERSON','at PC PENNES. at HOM HEPOT. it does. it does. IT DOESS.',
+              'xD jood one. THAT IS ABSOLUTELY CORRECT.','a real truth-tellore, huh. wull.')
+$AdLines  = @('why dontcha tell ''em the truth...','...in SPRINJ BOOT...','...for $5.')
+$Monopole = @('''member that Monopole game?','with the CUWPS?','at MCDONOLDS?')
+$Savior   = @('im sory but u half too feign for urself. im not ur savor.','i cannot save u from the incident. nobod can.',
+              'feign for urself now. im not ur savor.')
 
 # ============================ Set-piece art ==================================
 # The redacted incident report -- a form where every value is a black bar.
@@ -220,6 +235,48 @@ function Get-ConsequenceShot { param([string]$line)
     $rows+=(LB)
     Fit $rows }
 
+# A PROFOUND WONDER drifts across the broadcast (a stage direction, made flesh).
+function Get-WonderShot { param([string]$line)
+    $rows=@(LB)
+    1..4 | ForEach-Object { $rows+=Blank }
+    $w=Wrap2 $line $SW
+    $rows+=Cell $w[0] 'Gray'
+    $rows+=Cell $w[1] 'DarkGray'
+    1..2 | ForEach-Object { $rows+=Blank }
+    $rows+=Cell (Center '. . .' $SW) 'DarkGray'
+    $rows+=(LB)
+    Fit $rows }
+
+# SMASH CUT to -- THE LEVEL. (a crossover. it is, frankly, clevore.)
+function Get-LevelCutShot { param([string]$caption)
+    $box=@('+------------------------+',
+           '|  +------------------+  |',
+           '|  |    THE LEVEL     |  |',
+           '|  |  +------------+  |  |',
+           '|  |  | THE LEVEL  |  |  |',
+           '|  |  +-----><-----+  |  |',
+           '|  +------------------+  |',
+           '+------------------------+')
+    $rows=@(LB)
+    foreach ($l in $box) { $rows+=Cell (Center $l $SW) 'Cyan' }
+    $rows+=Cell (Center $caption $SW) 'White'
+    $rows+=(LB)
+    Fit $rows }
+
+# A WORD FROM OUR SPONSOR. the truth. in SPRINJ BOOT. for $5.
+function Get-AdShot { param([string]$line)
+    $rows=@(LB)
+    1..3 | ForEach-Object { $rows+=Blank }
+    $rows+=Cell (Center '* * *  A WORD FROM OUR SPONSOR  * * *' $SW) 'DarkYellow'
+    $rows+=Blank
+    $w=Wrap2 $line $SW
+    $rows+=Cell $w[0] 'Yellow'
+    $rows+=Cell $w[1] 'Yellow'
+    $rows+=Blank
+    $rows+=Cell (Center 'SPRINJ BOOT -- $5 -- THE TRUTH' $SW) 'Green'
+    $rows+=(LB)
+    Fit $rows }
+
 function Get-FlashShot { Fit (1..$SH | ForEach-Object { Cell ([string][char]0x2588 * $SW) 'White' }) }
 function Get-StaticShot { param([string]$banner='>>  PENDING INVESTIGATION  <<')
     $noise='#%&@*+=:;.,/\|<>~oO0'.ToCharArray(); $rows=@()
@@ -293,6 +350,12 @@ function Sting { param([string]$n) switch ($n) {
     'accuse'    { Beep 466 120; Beep 392 200 }
     'nervose'   { 1..5 | ForEach-Object { Beep (RNext 500 760) 35 } }        # a fluttering, anxious trill
     'another'   { Beep 660 70; Beep 880 110 }                                # ANOTHER ONE
+    'trombone'  { Beep 311 130; Beep 294 150; Beep 277 180; Beep 233 460 }   # sad jazz trombone, messing with u
+    'hallelujah'{ foreach ($f in 392,494,587,784) { Beep $f 120 } }          # u don't get rich otherwise
+    'cars'      { 1..3 | ForEach-Object { Beep (RNext 200 420) 40 } }        # automobiles, swiftly
+    'spill'     { Beep 880 60; Beep 440 130 }                                # a woman spills water
+    'smash'     { Beep 1200 40; Beep 90 220 }                                # SMASH CUT
+    'cash'      { foreach ($f in 988,1319,1568) { Beep $f 80 }; Beep 2093 200 }   # for $5
     'reveal'    { Beep 466 150; Beep 466 150; Beep 392 550 }
     'slam'      { Beep 150 60; Beep 95 200; Beep 60 320 }
     'stamp'     { Beep 200 60; Beep 90 260 }                                 # CONSEQUINCES, stamped
@@ -356,6 +419,30 @@ function Invoke-Incident { param($inc)
         $script:IncCount++; $stack += (Pick $Cascade)
         React ([Math]::Min(0.9, 0.5+$f*0.08))
         Show-Live (Get-CascadeShot $stack $script:IncCount) $false; Sting another; Hold ([Math]::Max(120,300-$f*28)); if (Test-Quit){throw 'quit'} }
+    # 5b. PROFOUND WONDERS -- the demand, another, the wonders, the smash cut, the sponsor
+    React 0.75
+    Show-Live (Get-CardShot (Pick $Demand2) 'or so help me' 'Red') $false; Sting accuse; Hold 1100; if (Test-Quit){throw 'quit'}
+    $script:IncCount++
+    React 0.85
+    Show-Live (Get-CardShot 'THERE WAS ANOTHER.' "incidint #$($script:IncCount)" 'Yellow') $false; Sting another; Hold 950; if (Test-Quit){throw 'quit'}
+    # a few profound wonders drift past
+    foreach ($wb in (@($Wonders | Sort-Object { $rng.Next() } | Select-Object -First 4))) {
+        $st = if ($wb -match 'automobile|car alarm') { 'cars' } elseif ($wb -match 'water') { 'spill' } elseif ($wb -match 'trombone') { 'trombone' } else { 'sigh' }
+        Show-Live (Get-WonderShot $wb) $false; Sting $st; Hold 700; if (Test-Quit){throw 'quit'} }
+    # the prosperity gospel, hollered across the aisle
+    React 0.7
+    Show-Live (Get-AccuseShot $inc (Pick $Prosper) 0) $false; Sting hallelujah; Hold 1000; if (Test-Quit){throw 'quit'}
+    # an insult. a jood one.
+    Show-Live (Get-NervousShot (Pick $Insults)) $false; Sting trombone; Hold 1000; if (Test-Quit){throw 'quit'}
+    # SMASH CUT to -- THE LEVEL
+    Invoke-Flash; Sting smash
+    Show-Live (Get-LevelCutShot 'clevore.............. >_>') $false; Hold 850; if (Test-Quit){throw 'quit'}
+    Show-Live (Get-LevelCutShot 'truth tellore huh.... wull....') $false; Sting trombone; Hold 850; if (Test-Quit){throw 'quit'}
+    # a word from our sponsor: the truth, in SPRINJ BOOT, for $5
+    foreach ($ad in $AdLines) { Show-Live (Get-AdShot $ad) $false; Sting cash; Hold 650; if (Test-Quit){throw 'quit'} }
+    Show-Live (Get-CardShot 'THAT IS ABSOLUTELY CORRECT.' '(*jazz trombone messing with u*)' 'White') $false; Sting trombone; Hold 1100; if (Test-Quit){throw 'quit'}
+    # 'member that Monopole game? with the CUWPS? at MCDONOLDS?
+    foreach ($mb in $Monopole) { Show-Live (Get-WonderShot $mb) $false; Beep (RNext 400 700) 60; Hold 600; if (Test-Quit){throw 'quit'} }
     # 6. THE REVEAL -> FLOORED
     $script:Reaction=0.1
     Show-Live (Get-RevealShot $inc.Reveal) $false; Invoke-Flash; Sting reveal; Hold 500
@@ -374,6 +461,8 @@ function Invoke-Incident { param($inc)
     $rows[8]=Cell (Center "$Viewer." $SW) 'Red'
     Show-Raw $rows $false; Beep 200 200; Hold 1100; if (Test-Quit){throw 'quit'}
     $rows=@($black); $rows[7]=Cell (Center 'ANOTHER INCIDENT. ANOTHER ONE.' $SW) 'DarkGray'; Show-Raw $rows $false; Sting another; Hold 1100
+    # ...and the broadcast reminds you: you are on your own now
+    Show-Live (Get-CardShot 'IM NOT UR SAVOR.' (Pick $Savior) 'DarkGray') $false; Sting trombone; Hold 1200; if (Test-Quit){throw 'quit'}
     # 8. PENDING INVESTIGATION -> static
     foreach ($s in 1..(RNext 5 8)){ Show-Live (Get-StaticShot) $true; Beep (RNext 200 600) 25; Hold 70; if (Test-Quit){throw 'quit'} } }
 
@@ -395,6 +484,15 @@ if ($Storyboard) {
         Show-Plain (Get-NervousShot 'I''m NERVOSE. I''m so NERVOSE.') $false; ''
         '  [ THE CASCADE -- ANOTHER INCIDENT. ANOTHER ONE. ]'
         Show-Plain (Get-CascadeShot @('ANOTHER INCIDENT.','ANOTHER ONE.','and ANOTHER.','INCIDENT.','...ANOTHER ONE.') ($script:IncCount+5)) $false; ''
+        $script:Reaction=0.75
+        '  [ THE DEMAND -- if ther is not another... ]'
+        Show-Plain (Get-CardShot 'IF THER IS NOT ANOTHER, I AM GOING' 'TO BE SO, FUCKING, PISSED.' 'Red') $false; ''
+        '  [ PROFOUND WONDER -- a stage direction, made flesh ]'
+        Show-Plain (Get-WonderShot 'a woman spills water on her lap and exits') $false; ''
+        '  [ SMASH CUT to -- THE LEVEL ]'
+        Show-Plain (Get-LevelCutShot 'clevore.............. >_>') $false; ''
+        '  [ A WORD FROM OUR SPONSOR -- the truth, in SPRINJ BOOT, for $5 ]'
+        Show-Plain (Get-AdShot '...in SPRINJ BOOT... for $5.') $false; ''
         $script:SlamFrames=7; $script:Reaction=1.0
         '  [ THE REVEAL -- the nature of the incident (still NEBALOSE); FLOORED ]'
         Show-Plain (Get-RevealShot $inc.Reveal) $false; ''
